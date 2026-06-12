@@ -1,0 +1,15 @@
+{
+  "name": "esti-biraz-fresh",
+  "version": "1.0.0",
+  "description": "ESTİ BİRAZ için Firebase tabanlı, modern dergi sitesi arayüzü.",
+  "type": "module",
+  "scripts": {
+    "dev": "npx serve .",
+    "deploy:firebase": "firebase deploy --only hosting,firestore:rules",
+    "check": "node --check src/app.js && node --check src/firebase-service.js && node --check src/content.js"
+  },
+  "keywords": ["esti-biraz", "firebase", "firestore", "magazine", "static-site"],
+  "author": "ESTİ BİRAZ",
+  "license": "MIT",
+  "devDependencies": {}
+}

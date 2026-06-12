@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">ESTİ BİRAZ logo sembolü</title>
+  <desc id="desc">Daire içinde kitap tabanından yükselen ağaç, devre, mum alevi/yaprak, EKG ve istatistik çizgileri.</desc>
+  <defs>
+    <style>
+      .main{fill:#003F3A}.line{fill:none;stroke:#003F3A;stroke-width:18;stroke-linecap:round;stroke-linejoin:round}.thin{fill:none;stroke:#003F3A;stroke-width:7;stroke-linecap:round;stroke-linejoin:round}.node{fill:#006D9E}.leaf{fill:#73B72B}.ekg{fill:none;stroke:#EF2B2D;stroke-width:6.5;stroke-linecap:round;stroke-linejoin:round}.cut{fill:#fff}
+    </style>
+  </defs>
+  <circle cx="256" cy="256" r="229" fill="none" stroke="#003F3A" stroke-width="22"/>
+  <path class="main" d="M126 384 C164 372,205 379,239 415 C205 401,170 399,132 407 Z"/>
+  <path class="main" d="M386 384 C348 372,307 379,273 415 C307 401,342 399,380 407 Z"/>
+  <path class="main" d="M120 411 C167 407,212 413,256 448 C300 413,345 407,392 411 C343 437,292 443,256 460 C220 443,169 437,120 411 Z"/>
+  <path class="cut" d="M132 398 C174 393,215 400,252 435 C212 415,172 410,126 421 Z" opacity=".9"/>
+  <path class="cut" d="M380 398 C338 393,297 400,260 435 C300 415,340 410,386 421 Z" opacity=".9"/>
+  <path class="main" d="M222 391 C228 341,227 302,223 277 C219 251,207 241,197 230 C190 221,189 206,198 196 C209 184,227 196,233 210 C239 225,244 244,256 257 C268 244,273 225,279 210 C285 196,303 184,314 196 C323 206,322 221,315 230 C305 241,293 251,289 277 C285 302,284 341,290 391 C277 414,266 433,256 448 C246 433,235 414,222 391 Z"/>
+  <path class="line" d="M231 218 L184 174 L184 132 M215 243 L158 197 L128 197 M220 281 L174 244 L96 244 M281 218 L328 174 L328 132 M297 243 L354 197 L384 197 M292 281 L338 244 L416 244"/>
+  <g><circle class="node" cx="184" cy="132" r="16"/><circle class="cut" cx="184" cy="132" r="7"/><circle class="node" cx="128" cy="197" r="16"/><circle class="cut" cx="128" cy="197" r="7"/><circle class="node" cx="96" cy="244" r="16"/><circle class="cut" cx="96" cy="244" r="7"/><circle class="node" cx="328" cy="132" r="16"/><circle class="cut" cx="328" cy="132" r="7"/><circle class="node" cx="384" cy="197" r="16"/><circle class="cut" cx="384" cy="197" r="7"/><circle class="node" cx="416" cy="244" r="16"/><circle class="cut" cx="416" cy="244" r="7"/></g>
+  <path class="main" d="M250 78 C219 116,215 149,242 184 C229 144,252 119,250 78 Z"/>
+  <path class="leaf" d="M272 96 C302 132,290 166,252 198 C254 154,262 123,272 96 Z"/>
+  <path class="cut" d="M263 138 C250 158,246 178,247 198 C255 179,266 160,282 139 C275 143,269 147,263 138 Z" opacity=".98"/>
+  <path class="ekg" d="M223 350 H240 L247 338 L256 371 L264 342 L271 350 H289"/>
+  <path class="thin" d="M102 376 L130 348 L158 369 L188 336"/>
+  <circle class="main" cx="102" cy="376" r="7"/><circle class="main" cx="130" cy="348" r="7"/><circle class="main" cx="158" cy="369" r="7"/><circle class="main" cx="188" cy="336" r="7"/>
+  <path class="thin" d="M324 388 H407"/>
+  <g stroke="#003F3A" stroke-width="6" stroke-linecap="round" fill="#003F3A">
+    <line x1="344" y1="351" x2="344" y2="383"/><line x1="337" y1="351" x2="351" y2="351"/><line x1="337" y1="383" x2="351" y2="383"/><rect x="337" y="361" width="14" height="13" rx="2"/>
+    <line x1="372" y1="331" x2="372" y2="383"/><line x1="365" y1="331" x2="379" y2="331"/><line x1="365" y1="383" x2="379" y2="383"/><rect x="365" y="350" width="14" height="16" rx="2"/>
+    <line x1="398" y1="352" x2="398" y2="382"/><line x1="391" y1="352" x2="405" y2="352"/><line x1="391" y1="382" x2="405" y2="382"/><rect x="391" y="362" width="14" height="13" rx="2"/>
+  </g>
+</svg>

@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="tr" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="ESTİ BİRAZ: sağlık, bilim, eğitim ve veri odaklı modern bilgi platformu." />
+    <title>ESTİ BİRAZ | Sağlık, bilim, eğitim ve veri</title>
+    <link rel="icon" href="public/assets/esti-biraz-logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="src/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#ana-icerik">İçeriğe geç</a>
+
+    <header class="site-header" data-site-header>
+      <section class="top-strip" aria-label="Üst bilgi">
+        <div class="container top-strip__inner">
+          <time id="todayLabel" datetime="2026-06-12">12 Haziran 2026</time>
+          <span>Sağlık • Bilim • Eğitim • Veri</span>
+          <button class="icon-button" id="themeToggle" type="button" aria-label="Koyu/açık görünümü değiştir">◐</button>
+        </div>
+      </section>
+
+      <section class="masthead">
+        <div class="container masthead__inner">
+          <a class="brand" href="#" aria-label="ESTİ BİRAZ ana sayfa">
+            <img class="brand__mark" src="public/assets/esti-biraz-logo.svg" alt="" width="64" height="64" />
+            <span class="brand__text">
+              <strong>ESTİ BİRAZ</strong>
+              <small>Sağlık, bilim, eğitim ve veri odaklı bilgi platformu</small>
+            </span>
+          </a>
+          <form class="search" id="searchForm" role="search">
+            <label class="sr-only" for="searchInput">Sitede ara</label>
+            <input id="searchInput" type="search" placeholder="Yazı, ders, konu ara…" autocomplete="off" />
+            <button type="submit">Ara</button>
+          </form>
+          <div class="account-actions" id="accountActions">
+            <button class="ghost-button" id="openAdminButton" type="button" hidden>Yönetim</button>
+            <button class="ghost-button" id="loginButton" type="button">Giriş</button>
+          </div>
+        </div>
+      </section>
+
+      <nav class="section-nav" aria-label="Ana gezinme">
+        <div class="container section-nav__inner">
+          <a href="#gundem">Gündem</a>
+          <a href="#saglik">Sağlık</a>
+          <a href="#bilim">Bilim</a>
+          <a href="#akademi">Akademi</a>
+          <a href="#veri">Veri Notları</a>
+          <a href="#hakkinda">Hakkında</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="ana-icerik">
+      <section class="container hero-grid" id="gundem" aria-labelledby="heroTitle">
+        <article class="lead-story" id="leadStory">
+          <span class="pill">Editörün seçimi</span>
+          <h1 id="heroTitle">Bilginin işe yaradığı, öğrenmenin sadeleştiği yeni ESTİ BİRAZ.</h1>
+          <p>Sağlık, bilim, eğitim ve veri okuryazarlığını aynı çatı altında toplayan temiz, hızlı ve geliştirilebilir bir yayın deneyimi.</p>
+          <div class="lead-story__meta">
+            <span>Yeni tasarım</span>
+            <span>Firebase hazır</span>
+            <span>Erişilebilir arayüz</span>
+          </div>
+        </article>
+        <aside class="briefing-card" aria-labelledby="briefingTitle">
+          <p class="eyebrow">Bugünün kısa notu</p>
+          <h2 id="briefingTitle">Ders ilerlemesi artık kullanıcı hesabına bağlanabilir.</h2>
+          <p>Giriş yapan kullanıcıların ilerlemesi Firestore'da saklanır. Girişsiz kullanımda yalnızca cihaz tarayıcısında geçici kayıt yapılır.</p>
+          <button class="primary-button" type="button" data-scroll-target="#akademi">Akademiye git</button>
+        </aside>
+      </section>
+
+      <section class="container section-block" id="saglik" aria-labelledby="latestTitle">
+        <div class="section-heading">
+          <p class="eyebrow">Dergi akışı</p>
+          <h2 id="latestTitle">Son yazılar</h2>
+        </div>
+        <div class="filter-row" id="categoryFilters" aria-label="Kategori filtreleri"></div>
+        <div class="article-layout" id="articleList" aria-live="polite"></div>
+      </section>
+
+      <section class="container split-block" id="akademi" aria-labelledby="academyTitle">
+        <div class="section-heading section-heading--sticky">
+          <p class="eyebrow">ESTİ BİRAZ Akademi</p>
+          <h2 id="academyTitle">Dersler ve öğrenme yolları</h2>
+          <p>Hero alanındaki eski kart kalabalığı kaldırıldı; akademi bölümü sade, doğrudan ve içerik odaklı bir akış olarak tasarlandı.</p>
+        </div>
+        <div class="course-grid" id="courseList"></div>
+      </section>
+
+      <section class="container data-panel" id="veri" aria-labelledby="dataTitle">
+        <div>
+          <p class="eyebrow">Veri notları</p>
+          <h2 id="dataTitle">Okunabilir küçük analizler</h2>
+          <p>Sağlık göstergeleri, epidemiyoloji, eğitim çıktıları ve uygulama metrikleri için kısa veri kartları.</p>
+        </div>
+        <div class="metric-grid" id="metricGrid"></div>
+      </section>
+
+      <section class="container newsletter" id="hakkinda" aria-labelledby="newsletterTitle">
+        <div>
+          <p class="eyebrow">Topluluk</p>
+          <h2 id="newsletterTitle">Daha düzenli, daha sakin, daha geliştirilebilir.</h2>
+          <p>Bu sürüm eski projeyi yamamaz; içeriği ve mantığı koruyup sayfa yapısını sıfırdan kurar. Firebase bağlandığında içerikler Firestore'dan okunur.</p>
+        </div>
+        <form id="newsletterForm" class="newsletter__form">
+          <label for="newsletterEmail">E-posta</label>
+          <input id="newsletterEmail" type="email" placeholder="ornek@eposta.com" required />
+          <button class="primary-button" type="submit">Kaydol</button>
+          <p class="form-note" id="newsletterNote" role="status"></p>
+        </form>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-grid">
+        <div>
+          <strong>ESTİ BİRAZ</strong>
+          <p>Sağlık, bilim, eğitim ve veri odaklı bilgi platformu.</p>
+        </div>
+        <div>
+          <span>Firebase koleksiyonları</span>
+          <code>articles</code> <code>courses</code> <code>users/{uid}/courseProgress</code>
+        </div>
+        <div>
+          <span>GitHub uyumu</span>
+          <p>Statik dosya mimarisi; GitHub Pages veya Firebase Hosting ile çalışır.</p>
+        </div>
+      </div>
+    </footer>
+
+    <dialog class="modal" id="articleDialog" aria-labelledby="articleDialogTitle">
+      <button class="modal__close" type="button" data-close-dialog="articleDialog" aria-label="Yazı penceresini kapat">×</button>
+      <article id="articleDialogContent"></article>
+    </dialog>
+
+    <dialog class="modal" id="courseDialog" aria-labelledby="courseDialogTitle">
+      <button class="modal__close" type="button" data-close-dialog="courseDialog" aria-label="Ders penceresini kapat">×</button>
+      <article id="courseDialogContent"></article>
+    </dialog>
+
+    <dialog class="modal modal--narrow" id="authDialog" aria-labelledby="authDialogTitle">
+      <button class="modal__close" type="button" data-close-dialog="authDialog" aria-label="Giriş penceresini kapat">×</button>
+      <h2 id="authDialogTitle">Hesap</h2>
+      <p id="authStatus" class="form-note">Firebase ayarları eklenirse giriş/çıkış etkinleşir.</p>
+      <form id="authForm" class="stacked-form">
+        <label for="authEmail">E-posta</label>
+        <input id="authEmail" type="email" autocomplete="email" required />
+        <label for="authPassword">Şifre</label>
+        <input id="authPassword" type="password" autocomplete="current-password" minlength="6" required />
+        <div class="button-row">
+          <button class="primary-button" type="submit" data-auth-action="login">Giriş yap</button>
+          <button class="ghost-button" type="button" id="registerButton">Kayıt ol</button>
+          <button class="ghost-button" type="button" id="logoutButton" hidden>Çıkış</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="adminDialog" aria-labelledby="adminTitle">
+      <button class="modal__close" type="button" data-close-dialog="adminDialog" aria-label="Yönetim penceresini kapat">×</button>
+      <h2 id="adminTitle">Yönetim paneli</h2>
+      <p class="form-note">Bu panel yalnızca Firestore kurallarıyla admin e-postasına açılır. İstemci tarafındaki görünürlük güvenlik yerine geçmez.</p>
+      <form id="adminArticleForm" class="admin-form">
+        <label>Başlık <input name="title" required /></label>
+        <label>Kategori <input name="category" required placeholder="Sağlık" /></label>
+        <label>Özet <textarea name="summary" required rows="3"></textarea></label>
+        <label>İçerik <textarea name="body" required rows="8"></textarea></label>
+        <label>Etiketler <input name="tags" placeholder="bilim, veri, eğitim" /></label>
+        <button class="primary-button" type="submit">Yazıyı Firestore'a ekle</button>
+        <p class="form-note" id="adminNote" role="status"></p>
+      </form>
+    </dialog>
+
+    <template id="articleCardTemplate">
+      <article class="article-card">
+        <button type="button" class="article-card__button">
+          <span class="article-card__category"></span>
+          <h3></h3>
+          <p></p>
+          <span class="article-card__meta"></span>
+        </button>
+      </article>
+    </template>
+
+    <template id="courseCardTemplate">
+      <article class="course-card">
+        <div class="course-card__topline"></div>
+        <h3></h3>
+        <p></p>
+        <progress max="100" value="0"></progress>
+        <button class="primary-button" type="button">Derse başla</button>
+      </article>
+    </template>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
