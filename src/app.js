@@ -253,49 +253,175 @@ function renderCourses() {
   els.courseList.innerHTML = '';
 
   state.courses.forEach((course) => {
+    const lessons = normalizeLessons(course);
     const progress = calculateCoursePercent(course);
     const fragment = template.content.cloneNode(true);
-    fragment.querySelector('h3').textContent = course.title;
-    fragment.querySelector('p').textContent = course.summary;
+    fragment.querySelector('h3').textContent = course.title || 'Başlıksız kurs';
+    fragment.querySelector('p').textContent = course.summary || 'Bu kurs için henüz özet eklenmedi.';
     fragment.querySelector('progress').value = progress;
     fragment.querySelector('button').textContent = progress ? `Devam et • %${progress}` : 'Derse başla';
+    fragment.querySelector('button').disabled = !lessons.length;
     fragment.querySelector('button').addEventListener('click', () => openCourse(course));
     els.courseList.append(fragment);
   });
 }
 
 function openCourse(course) {
+  const lessons = normalizeLessons(course);
   const progress = state.progress.get(course.id) || {};
+  const firstReadableLesson = lessons.find(hasReadableLessonContent) || lessons[0];
+
   els.courseDialogContent.innerHTML = `
     <div class="course-dialog">
       <p class="article-dialog__category">${escapeHtml(course.category || 'Akademi')}</p>
-      <h2 id="courseDialogTitle">${escapeHtml(course.title)}</h2>
-      <p>${escapeHtml(course.summary)}</p>
+      <h2 id="courseDialogTitle">${escapeHtml(course.title || 'Başlıksız kurs')}</h2>
+      <p>${escapeHtml(course.summary || 'Bu kurs için henüz özet eklenmedi.')}</p>
+      <div class="course-meta-row">
+        ${course.instructor ? `<span>Eğitmen: ${escapeHtml(course.instructor)}</span>` : ''}
+        ${course.level ? `<span>Düzey: ${escapeHtml(course.level)}</span>` : ''}
+        ${lessons.length ? `<span>${lessons.length} ders</span>` : ''}
+      </div>
       <p class="form-note">${getCurrentUser() ? 'İlerlemeniz Firestore hesabınıza kaydedilir.' : 'Giriş yapmadığınız için ilerleme bu tarayıcıda geçici saklanır.'}</p>
-      <ul class="lesson-list">
-        ${course.lessons.map((lesson) => `
-          <li class="lesson-item">
-            <input type="checkbox" id="${course.id}-${lesson.id}" data-course-id="${course.id}" data-lesson-id="${lesson.id}" ${progress[lesson.id] ? 'checked' : ''} />
-            <label for="${course.id}-${lesson.id}">${escapeHtml(lesson.title)}</label>
-            <span>${progress[lesson.id] ? 'Tamamlandı' : 'Bekliyor'}</span>
-          </li>
-        `).join('')}
-      </ul>
+
+      <div class="course-learning-layout">
+        <section aria-label="Ders listesi">
+          <ul class="lesson-list">
+            ${lessons.map((lesson) => renderLessonListItem(course, lesson, progress)).join('')}
+          </ul>
+        </section>
+        <section id="lessonReader" class="lesson-reader" aria-live="polite">
+          ${firstReadableLesson ? renderLessonReader(course, firstReadableLesson, progress) : renderEmptyLessonReader()}
+        </section>
+      </div>
     </div>
   `;
 
   els.courseDialogContent.querySelectorAll('input[type="checkbox"]').forEach((input) => {
     input.addEventListener('change', async () => {
-      await setLessonProgress(input.dataset.courseId, input.dataset.lessonId, input.checked);
-      const progressForCourse = state.progress.get(input.dataset.courseId) || {};
-      progressForCourse[input.dataset.lessonId] = input.checked;
-      state.progress.set(input.dataset.courseId, progressForCourse);
-      input.closest('.lesson-item').querySelector('span').textContent = input.checked ? 'Tamamlandı' : 'Bekliyor';
-      renderCourses();
+      await updateLessonProgressUi(course, input.dataset.lessonId, input.checked);
     });
   });
 
+  els.courseDialogContent.querySelectorAll('[data-open-lesson]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const lesson = lessons.find((item) => item.id === button.dataset.openLesson);
+      if (!lesson) return;
+      els.courseDialogContent.querySelector('#lessonReader').innerHTML = renderLessonReader(course, lesson, state.progress.get(course.id) || {});
+      bindLessonReaderActions(course);
+    });
+  });
+
+  bindLessonReaderActions(course);
   els.courseDialog.showModal();
+}
+
+function renderLessonListItem(course, lesson, progress) {
+  const inputId = `lesson-${course.id}-${lesson.id}`;
+  const status = progress[lesson.id] ? 'Tamamlandı' : 'Bekliyor';
+  const duration = lesson.durationMinutes ? `${lesson.durationMinutes} dk` : '';
+
+  return `
+    <li class="lesson-item" data-lesson-row="${escapeHtml(lesson.id)}">
+      <input type="checkbox" id="${escapeHtml(inputId)}" data-course-id="${escapeHtml(course.id)}" data-lesson-id="${escapeHtml(lesson.id)}" ${progress[lesson.id] ? 'checked' : ''} />
+      <div class="lesson-item__main">
+        <label for="${escapeHtml(inputId)}">${escapeHtml(lesson.title || 'Başlıksız ders')}</label>
+        <small>${escapeHtml([duration, lesson.type].filter(Boolean).join(' • ') || 'Ders')}</small>
+      </div>
+      <div class="lesson-item__actions">
+        <span>${status}</span>
+        <button class="ghost-button ghost-button--small" type="button" data-open-lesson="${escapeHtml(lesson.id)}">Dersi oku</button>
+      </div>
+    </li>
+  `;
+}
+
+function renderLessonReader(course, lesson, progress) {
+  const contentBlocks = normalizeTextBlocks(lesson.content);
+  const exampleBlocks = normalizeTextBlocks(lesson.example);
+  const keyPoints = Array.isArray(lesson.keyPoints) ? lesson.keyPoints.filter(Boolean) : [];
+  const resources = Array.isArray(lesson.resources) ? lesson.resources.filter(Boolean) : [];
+  const completed = Boolean(progress[lesson.id]);
+
+  return `
+    <article class="lesson-reader__card">
+      <p class="lesson-reader__eyebrow">${escapeHtml(course.title || 'Kurs')}</p>
+      <h3>${escapeHtml(lesson.title || 'Başlıksız ders')}</h3>
+      ${lesson.durationMinutes ? `<p class="form-note">Tahmini süre: ${escapeHtml(lesson.durationMinutes)} dakika</p>` : ''}
+
+      ${contentBlocks.length
+        ? contentBlocks.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')
+        : '<p class="form-note">Bu ders için henüz ayrıntılı içerik eklenmemiş. Firestore'daki ilgili ders nesnesine <code>content</code> alanı ekleyebilirsin.</p>'}
+
+      ${keyPoints.length ? `
+        <div class="lesson-callout">
+          <strong>Kısa özet</strong>
+          <ul>${keyPoints.map((point) => `<li>${escapeHtml(point)}</li>`).join('')}</ul>
+        </div>
+      ` : ''}
+
+      ${exampleBlocks.length ? `
+        <div class="lesson-example">
+          <strong>Örnek</strong>
+          ${exampleBlocks.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
+        </div>
+      ` : ''}
+
+      ${resources.length ? `
+        <div class="lesson-resources">
+          <strong>Kaynaklar</strong>
+          <ul>${resources.map(renderResourceLink).join('')}</ul>
+        </div>
+      ` : ''}
+
+      <div class="lesson-reader__footer">
+        <button class="primary-button" type="button" data-complete-lesson="${escapeHtml(lesson.id)}">
+          ${completed ? 'Tamamlandı işaretini kaldır' : 'Dersi tamamlandı işaretle'}
+        </button>
+        <span class="form-note">${completed ? 'Bu ders tamamlandı.' : 'Bu ders henüz tamamlanmadı.'}</span>
+      </div>
+    </article>
+  `;
+}
+
+function renderEmptyLessonReader() {
+  return `
+    <article class="lesson-reader__card">
+      <h3>Henüz ders yok</h3>
+      <p class="form-note">Bu kursa Firestore üzerinde <code>lessons</code> array alanı ekleyerek ders tanımlayabilirsin.</p>
+    </article>
+  `;
+}
+
+function bindLessonReaderActions(course) {
+  els.courseDialogContent.querySelectorAll('[data-complete-lesson]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const lessonId = button.dataset.completeLesson;
+      const progressForCourse = state.progress.get(course.id) || {};
+      await updateLessonProgressUi(course, lessonId, !progressForCourse[lessonId]);
+      const lesson = normalizeLessons(course).find((item) => item.id === lessonId);
+      if (lesson) {
+        els.courseDialogContent.querySelector('#lessonReader').innerHTML = renderLessonReader(course, lesson, state.progress.get(course.id) || {});
+        bindLessonReaderActions(course);
+      }
+    });
+  });
+}
+
+async function updateLessonProgressUi(course, lessonId, completed) {
+  await setLessonProgress(course.id, lessonId, completed);
+  const progressForCourse = state.progress.get(course.id) || {};
+  progressForCourse[lessonId] = completed;
+  state.progress.set(course.id, progressForCourse);
+
+  const row = els.courseDialogContent.querySelector(`[data-lesson-row="${cssEscape(lessonId)}"]`);
+  if (row) {
+    const input = row.querySelector('input[type="checkbox"]');
+    const status = row.querySelector('.lesson-item__actions span');
+    if (input) input.checked = completed;
+    if (status) status.textContent = completed ? 'Tamamlandı' : 'Bekliyor';
+  }
+
+  renderCourses();
 }
 
 function renderMetrics() {
@@ -308,11 +434,53 @@ function renderMetrics() {
 }
 
 function calculateCoursePercent(course) {
+  const lessons = normalizeLessons(course);
   const progress = state.progress.get(course.id) || {};
-  const total = course.lessons?.length || 0;
+  const total = lessons.length;
   if (!total) return 0;
-  const done = course.lessons.filter((lesson) => progress[lesson.id]).length;
+  const done = lessons.filter((lesson) => progress[lesson.id]).length;
   return Math.round((done / total) * 100);
+}
+
+function normalizeLessons(course) {
+  return Array.isArray(course.lessons)
+    ? [...course.lessons]
+        .map((lesson, index) => ({
+          ...lesson,
+          id: String(lesson?.id || `ders-${index + 1}`),
+          title: lesson?.title || `Ders ${index + 1}`,
+          order: Number.isFinite(Number(lesson?.order)) ? Number(lesson.order) : index + 1
+        }))
+        .sort((a, b) => a.order - b.order)
+    : [];
+}
+
+function normalizeTextBlocks(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
+  if (typeof value === 'string') return value.split('\n').map((item) => item.trim()).filter(Boolean);
+  return [];
+}
+
+function hasReadableLessonContent(lesson) {
+  return normalizeTextBlocks(lesson.content).length || normalizeTextBlocks(lesson.example).length;
+}
+
+function renderResourceLink(resource) {
+  if (typeof resource === 'string') {
+    return `<li>${escapeHtml(resource)}</li>`;
+  }
+
+  const title = resource.title || resource.label || resource.url || 'Kaynak';
+  if (resource.url) {
+    return `<li><a href="${escapeHtml(resource.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(title)}</a></li>`;
+  }
+
+  return `<li>${escapeHtml(title)}</li>`;
+}
+
+function cssEscape(value) {
+  if (window.CSS?.escape) return CSS.escape(value);
+  return String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
 }
 
 function restoreTheme() {
