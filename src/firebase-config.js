@@ -9,4 +9,4 @@ export const firebaseConfig = {
   appId: "1:262039594835:web:d5b29e26977c7764d8e3a6"
 };
 
-export const adminEmails = ['mehmet.gulay@ogr.iu.edu.tr'];
+export const adminEmails = ['mgulay.datascience@gmail.com'];
