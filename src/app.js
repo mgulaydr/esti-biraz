@@ -350,7 +350,7 @@ function renderLessonReader(course, lesson, progress) {
 
       ${contentBlocks.length
         ? contentBlocks.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')
-        : '<p class="form-note">Bu ders için henüz ayrıntılı içerik eklenmemiş. Firestore'daki ilgili ders nesnesine <code>content</code> alanı ekleyebilirsin.</p>'}
+        : '<p class="form-note">Bu ders için henüz ayrıntılı içerik eklenmemiş. Firestore’daki ilgili ders nesnesine <code>content</code> alanı ekleyebilirsin.</p>'}
 
       ${keyPoints.length ? `
         <div class="lesson-callout">
