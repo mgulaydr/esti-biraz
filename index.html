@@ -159,19 +159,123 @@
       </form>
     </dialog>
 
-    <dialog class="modal" id="adminDialog" aria-labelledby="adminTitle">
+    <dialog class="modal modal--admin" id="adminDialog" aria-labelledby="adminTitle">
       <button class="modal__close" type="button" data-close-dialog="adminDialog" aria-label="Yönetim penceresini kapat">×</button>
       <h2 id="adminTitle">Yönetim paneli</h2>
-      <p class="form-note">Bu panel yalnızca Firestore kurallarıyla admin e-postasına açılır. İstemci tarafındaki görünürlük güvenlik yerine geçmez.</p>
-      <form id="adminArticleForm" class="admin-form">
-        <label>Başlık <input name="title" required /></label>
-        <label>Kategori <input name="category" required placeholder="Sağlık" /></label>
-        <label>Özet <textarea name="summary" required rows="3"></textarea></label>
-        <label>İçerik <textarea name="body" required rows="8"></textarea></label>
-        <label>Etiketler <input name="tags" placeholder="bilim, veri, eğitim" /></label>
-        <button class="primary-button" type="submit">Yazıyı Firestore'a ekle</button>
-        <p class="form-note" id="adminNote" role="status"></p>
-      </form>
+      <p class="form-note">Bu panel yalnızca admin e-postasıyla görünür. Asıl yetki kontrolü Firestore Rules tarafındadır.</p>
+
+      <div class="admin-tabs" role="tablist" aria-label="Yönetim bölümleri">
+        <button type="button" data-admin-tab="articles" aria-pressed="true">Yazılar</button>
+        <button type="button" data-admin-tab="courses" aria-pressed="false">Kurslar</button>
+        <button type="button" data-admin-tab="lessons" aria-pressed="false">Dersler</button>
+      </div>
+
+      <p class="form-note admin-status" id="adminNote" role="status">Yönetim paneli hazır.</p>
+
+      <section class="admin-panel" data-admin-panel="articles">
+        <div class="admin-panel__head">
+          <div>
+            <h3>Yazı yönetimi</h3>
+            <p>Yeni yazı ekle veya Firestore’daki mevcut yazıyı düzenle.</p>
+          </div>
+          <div class="admin-inline-actions">
+            <label>
+              Yazı seç
+              <select id="adminArticleSelect"></select>
+            </label>
+            <button class="ghost-button" type="button" id="adminNewArticleButton">Yeni yazı</button>
+          </div>
+        </div>
+
+        <form id="adminArticleForm" class="admin-form admin-form--wide">
+          <div class="admin-form-grid">
+            <label>Başlık <input name="title" required /></label>
+            <label>Kategori <input name="category" required placeholder="Sağlık" /></label>
+            <label>Yayın tarihi <input name="publishedAt" type="date" /></label>
+            <label>Etiketler <input name="tags" placeholder="bilim, veri, eğitim" /></label>
+          </div>
+          <label>Özet <textarea name="summary" required rows="3"></textarea></label>
+          <label>İçerik <textarea name="body" required rows="9" placeholder="Her paragrafı yeni satıra yazabilirsin."></textarea></label>
+          <div class="button-row">
+            <button class="primary-button" type="submit">Yazıyı kaydet</button>
+            <button class="ghost-button danger-button" type="button" id="adminDeleteArticleButton">Yazıyı sil</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="admin-panel" data-admin-panel="courses" hidden>
+        <div class="admin-panel__head">
+          <div>
+            <h3>Kurs yönetimi</h3>
+            <p>Kursun kapak bilgilerini düzenle. Ders içerikleri “Dersler” sekmesinden eklenir.</p>
+          </div>
+          <div class="admin-inline-actions">
+            <label>
+              Kurs seç
+              <select id="adminCourseSelect"></select>
+            </label>
+            <button class="ghost-button" type="button" id="adminNewCourseButton">Yeni kurs</button>
+          </div>
+        </div>
+
+        <form id="adminCourseForm" class="admin-form admin-form--wide">
+          <div class="admin-form-grid">
+            <label>Başlık <input name="title" required placeholder="Halk Sağlığına Giriş" /></label>
+            <label>Kategori <input name="category" required placeholder="Sağlık" /></label>
+            <label>Eğitmen <input name="instructor" placeholder="Uzm. Dr. Mehmet Gülay" /></label>
+            <label>Düzey <input name="level" placeholder="Başlangıç" /></label>
+            <label>Durum
+              <select name="status">
+                <option value="published">published</option>
+                <option value="draft">draft</option>
+              </select>
+            </label>
+            <label class="checkbox-label"><input name="featured" type="checkbox" /> Öne çıkan kurs</label>
+          </div>
+          <label>Özet <textarea name="summary" required rows="4"></textarea></label>
+          <div class="button-row">
+            <button class="primary-button" type="submit">Kursu kaydet</button>
+            <button class="ghost-button danger-button" type="button" id="adminDeleteCourseButton">Kursu sil</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="admin-panel" data-admin-panel="lessons" hidden>
+        <div class="admin-panel__head">
+          <div>
+            <h3>Ders yönetimi</h3>
+            <p>Ders metni, kısa özet, örnek ve kaynakları Firestore’daki kurs dokümanına kaydeder.</p>
+          </div>
+          <div class="admin-inline-actions">
+            <label>
+              Kurs seç
+              <select id="adminCourseSelectForLesson"></select>
+            </label>
+            <label>
+              Ders seç
+              <select id="adminLessonSelect"></select>
+            </label>
+            <button class="ghost-button" type="button" id="adminNewLessonButton">Yeni ders</button>
+          </div>
+        </div>
+
+        <form id="adminLessonForm" class="admin-form admin-form--wide">
+          <div class="admin-form-grid">
+            <label>Ders başlığı <input name="title" required placeholder="Temel Kavramlar" /></label>
+            <label>Sıra <input name="order" type="number" min="1" step="1" /></label>
+            <label>Süre, dakika <input name="durationMinutes" type="number" min="1" step="1" /></label>
+            <label>Tür <input name="type" placeholder="Okuma" /></label>
+          </div>
+          <label>Ders içeriği <textarea name="content" rows="8" placeholder="Paragrafları satır satır yaz."></textarea></label>
+          <label>Kısa özet maddeleri <textarea name="keyPoints" rows="5" placeholder="Her satır bir madde olur."></textarea></label>
+          <label>Örnek <textarea name="example" rows="4" placeholder="Dersi somutlaştıran kısa örnek."></textarea></label>
+          <label>Kaynaklar <textarea name="resources" rows="4" placeholder="Başlık | https://...&#10;veya sadece https://..."></textarea></label>
+          <div class="button-row">
+            <button class="primary-button" type="submit">Dersi kaydet</button>
+            <button class="ghost-button danger-button" type="button" id="adminDeleteLessonButton">Dersi sil</button>
+          </div>
+        </form>
+      </section>
     </dialog>
 
     <template id="articleCardTemplate">
