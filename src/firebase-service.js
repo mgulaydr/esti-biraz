@@ -100,21 +100,112 @@ export async function loadCollection(collectionName, fallback = []) {
 }
 
 export async function saveArticle(article) {
-  if (!firebaseIsConfigured() || !db) throw new Error('Firestore hazır değil.');
-  if (!isAdminUser()) throw new Error('Yazı eklemek için admin hesabıyla giriş yapılmalıdır.');
-
+  assertAdminReady('Yazı kaydetmek için admin hesabıyla giriş yapılmalıdır.');
   const { firestoreMod } = await loadFirebaseModules();
-  const slug = slugify(article.title);
-  const docRef = firestoreMod.doc(db, 'articles', slug);
+  const articleId = slugify(article.id || article.slug || article.title);
+  if (!articleId) throw new Error('Yazı için geçerli bir başlık veya ID gerekli.');
+
+  const docRef = firestoreMod.doc(db, 'articles', articleId);
   const payload = {
-    ...article,
-    slug,
-    publishedAt: new Date().toISOString().slice(0, 10),
-    createdAt: firestoreMod.serverTimestamp(),
+    title: String(article.title || '').trim(),
+    category: String(article.category || '').trim() || 'Genel',
+    summary: String(article.summary || '').trim(),
+    body: normalizeTextArray(article.body),
+    tags: Array.isArray(article.tags) ? article.tags.map(String).map((item) => item.trim()).filter(Boolean) : [],
+    readingMinutes: Number.isFinite(Number(article.readingMinutes)) ? Number(article.readingMinutes) : 3,
+    publishedAt: article.publishedAt || new Date().toISOString().slice(0, 10),
+    slug: articleId,
     updatedAt: firestoreMod.serverTimestamp()
   };
+
   await firestoreMod.setDoc(docRef, payload, { merge: true });
-  return { id: slug, ...payload };
+  return { id: articleId, ...payload };
+}
+
+export async function deleteArticle(articleId) {
+  assertAdminReady('Yazı silmek için admin hesabıyla giriş yapılmalıdır.');
+  const { firestoreMod } = await loadFirebaseModules();
+  await firestoreMod.deleteDoc(firestoreMod.doc(db, 'articles', articleId));
+  return { id: articleId };
+}
+
+export async function saveCourse(course) {
+  assertAdminReady('Kurs kaydetmek için admin hesabıyla giriş yapılmalıdır.');
+  const { firestoreMod } = await loadFirebaseModules();
+  const courseId = slugify(course.id || course.slug || course.title);
+  if (!courseId) throw new Error('Kurs için geçerli bir başlık veya ID gerekli.');
+
+  const docRef = firestoreMod.doc(db, 'courses', courseId);
+  const existing = await firestoreMod.getDoc(docRef);
+  const existingLessons = existing.exists() && Array.isArray(existing.data()?.lessons) ? existing.data().lessons : [];
+  const incomingLessons = Array.isArray(course.lessons) ? course.lessons : existingLessons;
+  const payload = {
+    title: String(course.title || '').trim(),
+    category: String(course.category || '').trim() || 'Akademi',
+    summary: String(course.summary || '').trim(),
+    instructor: String(course.instructor || '').trim(),
+    level: String(course.level || '').trim() || 'Başlangıç',
+    status: String(course.status || '').trim() || 'published',
+    featured: Boolean(course.featured),
+    lessons: normalizeLessonsForFirestore(incomingLessons),
+    slug: courseId,
+    updatedAt: firestoreMod.serverTimestamp()
+  };
+
+  await firestoreMod.setDoc(docRef, payload, { merge: true });
+  return { id: courseId, ...payload };
+}
+
+export async function deleteCourse(courseId) {
+  assertAdminReady('Kurs silmek için admin hesabıyla giriş yapılmalıdır.');
+  const { firestoreMod } = await loadFirebaseModules();
+  await firestoreMod.deleteDoc(firestoreMod.doc(db, 'courses', courseId));
+  return { id: courseId };
+}
+
+export async function saveCourseLesson(courseId, lesson) {
+  assertAdminReady('Ders kaydetmek için admin hesabıyla giriş yapılmalıdır.');
+  const { firestoreMod } = await loadFirebaseModules();
+  const courseRef = firestoreMod.doc(db, 'courses', courseId);
+  const snapshot = await firestoreMod.getDoc(courseRef);
+  if (!snapshot.exists()) throw new Error('Ders eklemek için önce kurs kaydedilmelidir.');
+
+  const lessonId = slugify(lesson.id || lesson.title);
+  if (!lessonId) throw new Error('Ders için geçerli bir başlık veya ID gerekli.');
+
+  const courseData = snapshot.data();
+  const lessons = Array.isArray(courseData.lessons) ? courseData.lessons : [];
+  const normalizedLesson = normalizeLessonForFirestore({ ...lesson, id: lessonId });
+  const nextLessons = [
+    ...lessons.filter((item) => String(item?.id) !== lessonId),
+    normalizedLesson
+  ].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+
+  await firestoreMod.setDoc(courseRef, {
+    lessons: nextLessons,
+    updatedAt: firestoreMod.serverTimestamp()
+  }, { merge: true });
+
+  return { id: courseId, ...courseData, lessons: nextLessons };
+}
+
+export async function deleteCourseLesson(courseId, lessonId) {
+  assertAdminReady('Ders silmek için admin hesabıyla giriş yapılmalıdır.');
+  const { firestoreMod } = await loadFirebaseModules();
+  const courseRef = firestoreMod.doc(db, 'courses', courseId);
+  const snapshot = await firestoreMod.getDoc(courseRef);
+  if (!snapshot.exists()) throw new Error('Kurs bulunamadı.');
+
+  const courseData = snapshot.data();
+  const lessons = Array.isArray(courseData.lessons) ? courseData.lessons : [];
+  const nextLessons = lessons.filter((item) => String(item?.id) !== String(lessonId));
+
+  await firestoreMod.setDoc(courseRef, {
+    lessons: nextLessons,
+    updatedAt: firestoreMod.serverTimestamp()
+  }, { merge: true });
+
+  return { id: courseId, ...courseData, lessons: nextLessons };
 }
 
 export async function getCourseProgress(courseId) {
@@ -169,6 +260,11 @@ export async function saveNewsletterEmail(email) {
   return { mode: 'firestore' };
 }
 
+function assertAdminReady(message) {
+  if (!firebaseIsConfigured() || !db) throw new Error('Firestore hazır değil. Firebase ayarlarını kontrol et.');
+  if (!isAdminUser()) throw new Error(message);
+}
+
 function readLocalProgress(courseId) {
   return JSON.parse(localStorage.getItem(`${LOCAL_PREFIX}progress:${courseId}`) || '{}');
 }
@@ -177,8 +273,47 @@ function writeLocalProgress(courseId, progress) {
   localStorage.setItem(`${LOCAL_PREFIX}progress:${courseId}`, JSON.stringify(progress));
 }
 
-function slugify(value) {
-  return String(value)
+function normalizeLessonsForFirestore(lessons) {
+  return lessons.map(normalizeLessonForFirestore)
+    .filter((lesson) => lesson.id && lesson.title)
+    .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+}
+
+function normalizeLessonForFirestore(lesson) {
+  const order = Number(lesson.order);
+  const durationMinutes = Number(lesson.durationMinutes);
+  return {
+    id: slugify(lesson.id || lesson.title),
+    title: String(lesson.title || '').trim(),
+    order: Number.isFinite(order) ? order : 1,
+    durationMinutes: Number.isFinite(durationMinutes) && durationMinutes > 0 ? durationMinutes : null,
+    type: String(lesson.type || '').trim() || 'Okuma',
+    content: normalizeTextArray(lesson.content),
+    keyPoints: normalizeTextArray(lesson.keyPoints),
+    example: normalizeTextArray(lesson.example),
+    resources: normalizeResources(lesson.resources)
+  };
+}
+
+function normalizeTextArray(value) {
+  if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
+  if (typeof value === 'string') return value.split('\n').map((item) => item.trim()).filter(Boolean);
+  return [];
+}
+
+function normalizeResources(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    if (typeof item === 'string') return item.trim();
+    return {
+      title: String(item?.title || item?.label || item?.url || '').trim(),
+      url: String(item?.url || '').trim()
+    };
+  }).filter((item) => typeof item === 'string' ? item : item.title || item.url);
+}
+
+export function slugify(value) {
+  return String(value || '')
     .trim()
     .toLocaleLowerCase('tr-TR')
     .normalize('NFD')

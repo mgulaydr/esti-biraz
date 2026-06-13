@@ -1,5 +1,8 @@
 import { demoArticles, demoCourses, demoMetrics } from './content.js';
 import {
+  deleteArticle,
+  deleteCourse,
+  deleteCourseLesson,
   firebaseIsConfigured,
   getCurrentUser,
   getCourseProgress,
@@ -10,8 +13,11 @@ import {
   logout,
   register,
   saveArticle,
+  saveCourse,
+  saveCourseLesson,
   saveNewsletterEmail,
   setLessonProgress,
+  slugify,
   subscribeAuth
 } from './firebase-service.js';
 
@@ -21,7 +27,8 @@ const state = {
   activeCategory: 'Tümü',
   query: '',
   progress: new Map(),
-  firebaseEnabled: false
+  firebaseEnabled: false,
+  activeAdminTab: 'articles'
 };
 
 const els = {
@@ -44,7 +51,21 @@ const els = {
   logoutButton: document.querySelector('#logoutButton'),
   openAdminButton: document.querySelector('#openAdminButton'),
   adminDialog: document.querySelector('#adminDialog'),
+  adminTabs: document.querySelectorAll('[data-admin-tab]'),
+  adminPanels: document.querySelectorAll('[data-admin-panel]'),
   adminArticleForm: document.querySelector('#adminArticleForm'),
+  adminArticleSelect: document.querySelector('#adminArticleSelect'),
+  adminNewArticleButton: document.querySelector('#adminNewArticleButton'),
+  adminDeleteArticleButton: document.querySelector('#adminDeleteArticleButton'),
+  adminCourseForm: document.querySelector('#adminCourseForm'),
+  adminCourseSelect: document.querySelector('#adminCourseSelect'),
+  adminCourseSelectForLesson: document.querySelector('#adminCourseSelectForLesson'),
+  adminNewCourseButton: document.querySelector('#adminNewCourseButton'),
+  adminDeleteCourseButton: document.querySelector('#adminDeleteCourseButton'),
+  adminLessonForm: document.querySelector('#adminLessonForm'),
+  adminLessonSelect: document.querySelector('#adminLessonSelect'),
+  adminNewLessonButton: document.querySelector('#adminNewLessonButton'),
+  adminDeleteLessonButton: document.querySelector('#adminDeleteLessonButton'),
   adminNote: document.querySelector('#adminNote'),
   newsletterForm: document.querySelector('#newsletterForm'),
   newsletterNote: document.querySelector('#newsletterNote'),
@@ -61,9 +82,7 @@ async function boot() {
   const initResult = await initFirebase();
   state.firebaseEnabled = Boolean(initResult.enabled);
 
-  state.articles = sortByDate(await loadCollection('articles', demoArticles));
-  state.courses = await loadCollection('courses', demoCourses);
-
+  await reloadContent();
   await refreshAllCourseProgress();
   renderCategoryFilters();
   renderArticles();
@@ -75,7 +94,13 @@ async function boot() {
     updateAuthUi(user);
     await refreshAllCourseProgress();
     renderCourses();
+    renderAdminPanel();
   });
+}
+
+async function reloadContent() {
+  state.articles = sortByDate(await loadCollection('articles', demoArticles));
+  state.courses = sortCourses(await loadCollection('courses', demoCourses));
 }
 
 function setTodayLabel() {
@@ -107,7 +132,10 @@ function bindEvents() {
   });
 
   els.loginButton.addEventListener('click', () => els.authDialog.showModal());
-  els.openAdminButton.addEventListener('click', () => els.adminDialog.showModal());
+  els.openAdminButton.addEventListener('click', () => {
+    renderAdminPanel();
+    els.adminDialog.showModal();
+  });
 
   els.authForm.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -120,29 +148,31 @@ function bindEvents() {
     els.authDialog.close();
   });
 
-  els.adminArticleForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const data = new FormData(els.adminArticleForm);
-    const payload = {
-      title: data.get('title'),
-      category: data.get('category'),
-      summary: data.get('summary'),
-      body: String(data.get('body')).split('\n').filter(Boolean),
-      tags: String(data.get('tags') || '').split(',').map((tag) => tag.trim()).filter(Boolean),
-      readingMinutes: Math.max(2, Math.ceil(String(data.get('body')).length / 850))
-    };
-
-    try {
-      const saved = await saveArticle(payload);
-      state.articles = sortByDate([saved, ...state.articles.filter((article) => article.id !== saved.id)]);
-      els.adminNote.textContent = 'Yazı kaydedildi.';
-      els.adminArticleForm.reset();
-      renderCategoryFilters();
-      renderArticles();
-    } catch (error) {
-      els.adminNote.textContent = error.message;
-    }
+  els.adminTabs.forEach((button) => {
+    button.addEventListener('click', () => {
+      state.activeAdminTab = button.dataset.adminTab;
+      renderAdminTabs();
+    });
   });
+
+  els.adminArticleForm?.addEventListener('submit', handleAdminArticleSubmit);
+  els.adminArticleSelect?.addEventListener('change', () => fillArticleForm(els.adminArticleSelect.value));
+  els.adminNewArticleButton?.addEventListener('click', clearArticleForm);
+  els.adminDeleteArticleButton?.addEventListener('click', handleAdminArticleDelete);
+
+  els.adminCourseForm?.addEventListener('submit', handleAdminCourseSubmit);
+  els.adminCourseSelect?.addEventListener('change', () => fillCourseForm(els.adminCourseSelect.value));
+  els.adminNewCourseButton?.addEventListener('click', clearCourseForm);
+  els.adminDeleteCourseButton?.addEventListener('click', handleAdminCourseDelete);
+
+  els.adminCourseSelectForLesson?.addEventListener('change', () => {
+    populateLessonSelect();
+    clearLessonForm({ keepCourse: true });
+  });
+  els.adminLessonSelect?.addEventListener('change', () => fillLessonForm(els.adminCourseSelectForLesson.value, els.adminLessonSelect.value));
+  els.adminNewLessonButton?.addEventListener('click', () => clearLessonForm({ keepCourse: true }));
+  els.adminDeleteLessonButton?.addEventListener('click', handleAdminLessonDelete);
+  els.adminLessonForm?.addEventListener('submit', handleAdminLessonSubmit);
 
   els.newsletterForm.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -185,7 +215,7 @@ function updateAuthUi(user) {
 }
 
 function renderCategoryFilters() {
-  const categories = ['Tümü', ...new Set(state.articles.map((article) => article.category))];
+  const categories = ['Tümü', ...new Set(state.articles.map((article) => article.category).filter(Boolean))];
   els.categoryFilters.innerHTML = '';
   categories.forEach((category) => {
     const button = document.createElement('button');
@@ -222,9 +252,9 @@ function renderArticles() {
   filtered.forEach((article) => {
     const fragment = template.content.cloneNode(true);
     const button = fragment.querySelector('.article-card__button');
-    fragment.querySelector('.article-card__category').textContent = article.category;
-    fragment.querySelector('h3').textContent = article.title;
-    fragment.querySelector('p').textContent = article.summary;
+    fragment.querySelector('.article-card__category').textContent = article.category || 'Genel';
+    fragment.querySelector('h3').textContent = article.title || 'Başlıksız yazı';
+    fragment.querySelector('p').textContent = article.summary || 'Bu yazı için özet eklenmedi.';
     fragment.querySelector('.article-card__meta').textContent = `${formatDate(article.publishedAt)} • ${article.readingMinutes || 3} dk okuma`;
     button.addEventListener('click', () => openArticle(article));
     els.articleList.append(fragment);
@@ -233,10 +263,10 @@ function renderArticles() {
 
 function openArticle(article) {
   els.articleDialogContent.innerHTML = `
-    <p class="article-dialog__category">${escapeHtml(article.category)}</p>
-    <h2 id="articleDialogTitle">${escapeHtml(article.title)}</h2>
+    <p class="article-dialog__category">${escapeHtml(article.category || 'Genel')}</p>
+    <h2 id="articleDialogTitle">${escapeHtml(article.title || 'Başlıksız yazı')}</h2>
     <p class="form-note">${formatDate(article.publishedAt)} • ${(article.tags || []).map(escapeHtml).join(' • ')}</p>
-    ${(Array.isArray(article.body) ? article.body : [article.body]).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
+    ${(Array.isArray(article.body) ? article.body : [article.body]).filter(Boolean).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
   `;
   els.articleDialog.showModal();
 }
@@ -252,10 +282,13 @@ function renderCourses() {
   const template = document.querySelector('#courseCardTemplate');
   els.courseList.innerHTML = '';
 
-  state.courses.forEach((course) => {
+  const visibleCourses = state.courses.filter((course) => isAdminUser() || !course.status || course.status === 'published');
+
+  visibleCourses.forEach((course) => {
     const lessons = normalizeLessons(course);
     const progress = calculateCoursePercent(course);
     const fragment = template.content.cloneNode(true);
+    fragment.querySelector('.course-card__topline').textContent = course.category || 'Akademi';
     fragment.querySelector('h3').textContent = course.title || 'Başlıksız kurs';
     fragment.querySelector('p').textContent = course.summary || 'Bu kurs için henüz özet eklenmedi.';
     fragment.querySelector('progress').value = progress;
@@ -264,6 +297,10 @@ function renderCourses() {
     fragment.querySelector('button').addEventListener('click', () => openCourse(course));
     els.courseList.append(fragment);
   });
+
+  if (!visibleCourses.length) {
+    els.courseList.innerHTML = '<p class="form-note">Henüz yayınlanmış kurs eklenmedi.</p>';
+  }
 }
 
 function openCourse(course) {
@@ -433,6 +470,367 @@ function renderMetrics() {
   `).join('');
 }
 
+function renderAdminPanel() {
+  if (!els.adminDialog) return;
+  renderAdminTabs();
+  populateArticleSelect();
+  populateCourseSelects();
+  if (!els.adminArticleForm?.dataset.loaded) clearArticleForm();
+  if (!els.adminCourseForm?.dataset.loaded) clearCourseForm();
+  populateLessonSelect();
+  if (!els.adminLessonForm?.dataset.loaded) clearLessonForm({ keepCourse: true });
+}
+
+function renderAdminTabs() {
+  els.adminTabs.forEach((button) => {
+    const active = button.dataset.adminTab === state.activeAdminTab;
+    button.setAttribute('aria-pressed', String(active));
+  });
+
+  els.adminPanels.forEach((panel) => {
+    panel.hidden = panel.dataset.adminPanel !== state.activeAdminTab;
+  });
+}
+
+function populateArticleSelect() {
+  if (!els.adminArticleSelect) return;
+  const currentValue = els.adminArticleSelect.value;
+  els.adminArticleSelect.innerHTML = '<option value="">Yeni yazı oluştur</option>';
+  state.articles.forEach((article) => {
+    const option = document.createElement('option');
+    option.value = article.id;
+    option.textContent = article.title || article.id;
+    els.adminArticleSelect.append(option);
+  });
+  els.adminArticleSelect.value = state.articles.some((article) => article.id === currentValue) ? currentValue : '';
+}
+
+function clearArticleForm() {
+  if (!els.adminArticleForm) return;
+  els.adminArticleForm.reset();
+  els.adminArticleForm.dataset.articleId = '';
+  els.adminArticleForm.dataset.loaded = 'true';
+  if (els.adminArticleSelect) els.adminArticleSelect.value = '';
+  setFormField(els.adminArticleForm, 'publishedAt', new Date().toISOString().slice(0, 10));
+  setAdminNote('Yeni yazı hazır. Başlık yazınca Firestore’da slug otomatik oluşur.');
+}
+
+function fillArticleForm(articleId) {
+  if (!els.adminArticleForm) return;
+  if (!articleId) {
+    clearArticleForm();
+    return;
+  }
+
+  const article = state.articles.find((item) => item.id === articleId);
+  if (!article) return;
+  els.adminArticleForm.dataset.articleId = article.id;
+  els.adminArticleForm.dataset.loaded = 'true';
+  setFormField(els.adminArticleForm, 'title', article.title);
+  setFormField(els.adminArticleForm, 'category', article.category);
+  setFormField(els.adminArticleForm, 'summary', article.summary);
+  setFormField(els.adminArticleForm, 'body', normalizeTextBlocks(article.body).join('\n\n'));
+  setFormField(els.adminArticleForm, 'tags', Array.isArray(article.tags) ? article.tags.join(', ') : '');
+  setFormField(els.adminArticleForm, 'publishedAt', article.publishedAt || new Date().toISOString().slice(0, 10));
+  setAdminNote(`“${article.title}” düzenleniyor.`);
+}
+
+async function handleAdminArticleSubmit(event) {
+  event.preventDefault();
+  const data = new FormData(els.adminArticleForm);
+  const body = splitParagraphs(data.get('body'));
+  const payload = {
+    id: els.adminArticleForm.dataset.articleId || undefined,
+    title: data.get('title'),
+    category: data.get('category'),
+    summary: data.get('summary'),
+    body,
+    tags: String(data.get('tags') || '').split(',').map((tag) => tag.trim()).filter(Boolean),
+    readingMinutes: Math.max(2, Math.ceil(body.join(' ').length / 850)),
+    publishedAt: data.get('publishedAt') || new Date().toISOString().slice(0, 10)
+  };
+
+  try {
+    const saved = await saveArticle(payload);
+    state.articles = sortByDate([saved, ...state.articles.filter((article) => article.id !== saved.id)]);
+    els.adminArticleForm.dataset.articleId = saved.id;
+    renderCategoryFilters();
+    renderArticles();
+    populateArticleSelect();
+    els.adminArticleSelect.value = saved.id;
+    setAdminNote('Yazı kaydedildi.');
+  } catch (error) {
+    setAdminNote(error.message);
+  }
+}
+
+async function handleAdminArticleDelete() {
+  const articleId = els.adminArticleForm?.dataset.articleId;
+  if (!articleId) {
+    setAdminNote('Silmek için önce bir yazı seç.');
+    return;
+  }
+  const article = state.articles.find((item) => item.id === articleId);
+  if (!confirm(`“${article?.title || articleId}” yazısı silinsin mi?`)) return;
+
+  try {
+    await deleteArticle(articleId);
+    state.articles = state.articles.filter((item) => item.id !== articleId);
+    renderCategoryFilters();
+    renderArticles();
+    populateArticleSelect();
+    clearArticleForm();
+    setAdminNote('Yazı silindi.');
+  } catch (error) {
+    setAdminNote(error.message);
+  }
+}
+
+function populateCourseSelects() {
+  const previousCourseValue = els.adminCourseSelect?.value;
+  const previousLessonCourseValue = els.adminCourseSelectForLesson?.value;
+
+  [els.adminCourseSelect, els.adminCourseSelectForLesson].forEach((select) => {
+    if (!select) return;
+    const placeholder = select === els.adminCourseSelect ? 'Yeni kurs oluştur' : 'Ders eklenecek kursu seç';
+    select.innerHTML = `<option value="">${placeholder}</option>`;
+    state.courses.forEach((course) => {
+      const option = document.createElement('option');
+      option.value = course.id;
+      option.textContent = course.title || course.id;
+      select.append(option);
+    });
+  });
+
+  if (els.adminCourseSelect) {
+    els.adminCourseSelect.value = state.courses.some((course) => course.id === previousCourseValue) ? previousCourseValue : '';
+  }
+  if (els.adminCourseSelectForLesson) {
+    const fallback = state.courses[0]?.id || '';
+    els.adminCourseSelectForLesson.value = state.courses.some((course) => course.id === previousLessonCourseValue)
+      ? previousLessonCourseValue
+      : fallback;
+  }
+}
+
+function clearCourseForm() {
+  if (!els.adminCourseForm) return;
+  els.adminCourseForm.reset();
+  els.adminCourseForm.dataset.courseId = '';
+  els.adminCourseForm.dataset.loaded = 'true';
+  if (els.adminCourseSelect) els.adminCourseSelect.value = '';
+  setFormField(els.adminCourseForm, 'status', 'published');
+  setFormField(els.adminCourseForm, 'level', 'Başlangıç');
+  setAdminNote('Yeni kurs hazır. Dersleri ayrı Dersler sekmesinden eklersin.');
+}
+
+function fillCourseForm(courseId) {
+  if (!els.adminCourseForm) return;
+  if (!courseId) {
+    clearCourseForm();
+    return;
+  }
+
+  const course = state.courses.find((item) => item.id === courseId);
+  if (!course) return;
+  els.adminCourseForm.dataset.courseId = course.id;
+  els.adminCourseForm.dataset.loaded = 'true';
+  setFormField(els.adminCourseForm, 'title', course.title);
+  setFormField(els.adminCourseForm, 'category', course.category);
+  setFormField(els.adminCourseForm, 'summary', course.summary);
+  setFormField(els.adminCourseForm, 'instructor', course.instructor);
+  setFormField(els.adminCourseForm, 'level', course.level || 'Başlangıç');
+  setFormField(els.adminCourseForm, 'status', course.status || 'published');
+  setFormField(els.adminCourseForm, 'featured', Boolean(course.featured));
+  setAdminNote(`“${course.title}” kursu düzenleniyor.`);
+}
+
+async function handleAdminCourseSubmit(event) {
+  event.preventDefault();
+  const data = new FormData(els.adminCourseForm);
+  const courseId = els.adminCourseForm.dataset.courseId;
+  const existing = state.courses.find((course) => course.id === courseId);
+  const payload = {
+    id: courseId || undefined,
+    title: data.get('title'),
+    category: data.get('category'),
+    summary: data.get('summary'),
+    instructor: data.get('instructor'),
+    level: data.get('level'),
+    status: data.get('status') || 'published',
+    featured: data.get('featured') === 'on',
+    lessons: existing?.lessons || []
+  };
+
+  try {
+    const saved = await saveCourse(payload);
+    upsertCourse(saved);
+    await refreshAllCourseProgress();
+    renderCourses();
+    populateCourseSelects();
+    els.adminCourseForm.dataset.courseId = saved.id;
+    els.adminCourseSelect.value = saved.id;
+    els.adminCourseSelectForLesson.value = saved.id;
+    populateLessonSelect();
+    setAdminNote('Kurs kaydedildi.');
+  } catch (error) {
+    setAdminNote(error.message);
+  }
+}
+
+async function handleAdminCourseDelete() {
+  const courseId = els.adminCourseForm?.dataset.courseId;
+  if (!courseId) {
+    setAdminNote('Silmek için önce bir kurs seç.');
+    return;
+  }
+  const course = state.courses.find((item) => item.id === courseId);
+  if (!confirm(`“${course?.title || courseId}” kursu silinsin mi? Kullanıcı ilerleme kayıtları ayrıca silinmez.`)) return;
+
+  try {
+    await deleteCourse(courseId);
+    state.courses = state.courses.filter((item) => item.id !== courseId);
+    state.progress.delete(courseId);
+    renderCourses();
+    populateCourseSelects();
+    populateLessonSelect();
+    clearCourseForm();
+    clearLessonForm({ keepCourse: true });
+    setAdminNote('Kurs silindi.');
+  } catch (error) {
+    setAdminNote(error.message);
+  }
+}
+
+function populateLessonSelect() {
+  if (!els.adminLessonSelect) return;
+  const course = state.courses.find((item) => item.id === els.adminCourseSelectForLesson?.value);
+  const previous = els.adminLessonSelect.value;
+  els.adminLessonSelect.innerHTML = '<option value="">Yeni ders oluştur</option>';
+  normalizeLessons(course || {}).forEach((lesson) => {
+    const option = document.createElement('option');
+    option.value = lesson.id;
+    option.textContent = `${lesson.order}. ${lesson.title}`;
+    els.adminLessonSelect.append(option);
+  });
+  els.adminLessonSelect.value = normalizeLessons(course || {}).some((lesson) => lesson.id === previous) ? previous : '';
+}
+
+function clearLessonForm({ keepCourse = false } = {}) {
+  if (!els.adminLessonForm) return;
+  const selectedCourse = els.adminCourseSelectForLesson?.value || '';
+  els.adminLessonForm.reset();
+  els.adminLessonForm.dataset.lessonId = '';
+  els.adminLessonForm.dataset.loaded = 'true';
+  if (keepCourse && els.adminCourseSelectForLesson) els.adminCourseSelectForLesson.value = selectedCourse;
+  if (els.adminLessonSelect) els.adminLessonSelect.value = '';
+  setFormField(els.adminLessonForm, 'type', 'Okuma');
+  const nextOrder = normalizeLessons(state.courses.find((course) => course.id === selectedCourse) || {}).length + 1;
+  setFormField(els.adminLessonForm, 'order', nextOrder);
+  setAdminNote('Yeni ders hazır. Paragrafları ve maddeleri satır satır yazabilirsin.');
+}
+
+function fillLessonForm(courseId, lessonId) {
+  if (!els.adminLessonForm) return;
+  if (!courseId || !lessonId) {
+    clearLessonForm({ keepCourse: true });
+    return;
+  }
+
+  const course = state.courses.find((item) => item.id === courseId);
+  const lesson = normalizeLessons(course || {}).find((item) => item.id === lessonId);
+  if (!lesson) return;
+  els.adminLessonForm.dataset.lessonId = lesson.id;
+  els.adminLessonForm.dataset.loaded = 'true';
+  setFormField(els.adminLessonForm, 'title', lesson.title);
+  setFormField(els.adminLessonForm, 'order', lesson.order);
+  setFormField(els.adminLessonForm, 'durationMinutes', lesson.durationMinutes || '');
+  setFormField(els.adminLessonForm, 'type', lesson.type || 'Okuma');
+  setFormField(els.adminLessonForm, 'content', normalizeTextBlocks(lesson.content).join('\n\n'));
+  setFormField(els.adminLessonForm, 'keyPoints', Array.isArray(lesson.keyPoints) ? lesson.keyPoints.join('\n') : '');
+  setFormField(els.adminLessonForm, 'example', normalizeTextBlocks(lesson.example).join('\n\n'));
+  setFormField(els.adminLessonForm, 'resources', resourcesToText(lesson.resources));
+  setAdminNote(`“${lesson.title}” dersi düzenleniyor.`);
+}
+
+async function handleAdminLessonSubmit(event) {
+  event.preventDefault();
+  const courseId = els.adminCourseSelectForLesson?.value;
+  if (!courseId) {
+    setAdminNote('Ders kaydetmek için önce kurs seç.');
+    return;
+  }
+
+  const data = new FormData(els.adminLessonForm);
+  const lesson = {
+    id: els.adminLessonForm.dataset.lessonId || undefined,
+    title: data.get('title'),
+    order: Number(data.get('order') || 1),
+    durationMinutes: Number(data.get('durationMinutes') || 0) || null,
+    type: data.get('type') || 'Okuma',
+    content: splitParagraphs(data.get('content')),
+    keyPoints: splitLines(data.get('keyPoints')),
+    example: splitParagraphs(data.get('example')),
+    resources: parseResources(data.get('resources'))
+  };
+
+  try {
+    const updatedCourse = await saveCourseLesson(courseId, lesson);
+    upsertCourse(updatedCourse);
+    await refreshAllCourseProgress();
+    renderCourses();
+    populateCourseSelects();
+    els.adminCourseSelectForLesson.value = courseId;
+    populateLessonSelect();
+    const savedLessonId = slugify(lesson.id || lesson.title);
+    els.adminLessonForm.dataset.lessonId = savedLessonId;
+    els.adminLessonSelect.value = savedLessonId;
+    setAdminNote('Ders kaydedildi.');
+  } catch (error) {
+    setAdminNote(error.message);
+  }
+}
+
+async function handleAdminLessonDelete() {
+  const courseId = els.adminCourseSelectForLesson?.value;
+  const lessonId = els.adminLessonForm?.dataset.lessonId || els.adminLessonSelect?.value;
+  if (!courseId || !lessonId) {
+    setAdminNote('Silmek için önce kurs ve ders seç.');
+    return;
+  }
+  const course = state.courses.find((item) => item.id === courseId);
+  const lesson = normalizeLessons(course || {}).find((item) => item.id === lessonId);
+  if (!confirm(`“${lesson?.title || lessonId}” dersi silinsin mi?`)) return;
+
+  try {
+    const updatedCourse = await deleteCourseLesson(courseId, lessonId);
+    upsertCourse(updatedCourse);
+    renderCourses();
+    populateCourseSelects();
+    els.adminCourseSelectForLesson.value = courseId;
+    populateLessonSelect();
+    clearLessonForm({ keepCourse: true });
+    setAdminNote('Ders silindi.');
+  } catch (error) {
+    setAdminNote(error.message);
+  }
+}
+
+function setAdminNote(message) {
+  if (els.adminNote) els.adminNote.textContent = message;
+}
+
+function setFormField(form, name, value) {
+  const field = form?.elements?.[name];
+  if (!field) return;
+  if (field.type === 'checkbox') field.checked = Boolean(value);
+  else field.value = value ?? '';
+}
+
+function upsertCourse(course) {
+  state.courses = sortCourses([course, ...state.courses.filter((item) => item.id !== course.id)]);
+}
+
 function calculateCoursePercent(course) {
   const lessons = normalizeLessons(course);
   const progress = state.progress.get(course.id) || {};
@@ -443,7 +841,7 @@ function calculateCoursePercent(course) {
 }
 
 function normalizeLessons(course) {
-  return Array.isArray(course.lessons)
+  return Array.isArray(course?.lessons)
     ? [...course.lessons]
         .map((lesson, index) => ({
           ...lesson,
@@ -459,6 +857,37 @@ function normalizeTextBlocks(value) {
   if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
   if (typeof value === 'string') return value.split('\n').map((item) => item.trim()).filter(Boolean);
   return [];
+}
+
+function splitParagraphs(value) {
+  return String(value || '')
+    .split(/\n{2,}|\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function splitLines(value) {
+  return String(value || '')
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseResources(value) {
+  return splitLines(value).map((line) => {
+    const [title, url] = line.split('|').map((part) => part.trim());
+    if (url) return { title, url };
+    if (/^https?:\/\//i.test(title)) return { title, url: title };
+    return title;
+  });
+}
+
+function resourcesToText(resources) {
+  if (!Array.isArray(resources)) return '';
+  return resources.map((resource) => {
+    if (typeof resource === 'string') return resource;
+    return [resource.title, resource.url].filter(Boolean).join(' | ');
+  }).join('\n');
 }
 
 function hasReadableLessonContent(lesson) {
@@ -497,6 +926,10 @@ function toggleTheme() {
 
 function sortByDate(items) {
   return [...items].sort((a, b) => String(b.publishedAt || '').localeCompare(String(a.publishedAt || '')));
+}
+
+function sortCourses(items) {
+  return [...items].sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'tr-TR'));
 }
 
 function formatDate(value) {
