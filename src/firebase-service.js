@@ -111,6 +111,7 @@ export async function saveArticle(article) {
     category: String(article.category || '').trim() || 'Genel',
     summary: String(article.summary || '').trim(),
     body: normalizeTextArray(article.body),
+    contentBlocks: normalizeContentBlocks(article.contentBlocks),
     tags: Array.isArray(article.tags) ? article.tags.map(String).map((item) => item.trim()).filter(Boolean) : [],
     readingMinutes: Number.isFinite(Number(article.readingMinutes)) ? Number(article.readingMinutes) : 3,
     publishedAt: article.publishedAt || new Date().toISOString().slice(0, 10),
@@ -291,7 +292,8 @@ function normalizeLessonForFirestore(lesson) {
     content: normalizeTextArray(lesson.content),
     keyPoints: normalizeTextArray(lesson.keyPoints),
     example: normalizeTextArray(lesson.example),
-    resources: normalizeResources(lesson.resources)
+    resources: normalizeResources(lesson.resources),
+    contentBlocks: normalizeContentBlocks(lesson.contentBlocks)
   };
 }
 
@@ -310,6 +312,27 @@ function normalizeResources(value) {
       url: String(item?.url || '').trim()
     };
   }).filter((item) => typeof item === 'string' ? item : item.title || item.url);
+}
+
+function normalizeContentBlocks(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((block) => block && typeof block === 'object')
+    .map((block) => {
+      const type = String(block.type || 'paragraph').trim().toLowerCase();
+      const normalized = { type };
+
+      ['text', 'title', 'tone', 'url', 'alt', 'caption', 'source', 'question', 'explanation', 'videoId'].forEach((key) => {
+        if (block[key] !== undefined && block[key] !== null) normalized[key] = String(block[key]).trim();
+      });
+
+      if (Array.isArray(block.items)) normalized.items = block.items.map(String).map((item) => item.trim()).filter(Boolean);
+      if (Array.isArray(block.options)) normalized.options = block.options.map(String).map((item) => item.trim()).filter(Boolean);
+      if (Number.isFinite(Number(block.correctIndex))) normalized.correctIndex = Number(block.correctIndex);
+
+      return normalized;
+    })
+    .filter((block) => block.type);
 }
 
 export function slugify(value) {

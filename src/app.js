@@ -262,12 +262,14 @@ function renderArticles() {
 }
 
 function openArticle(article) {
+  const blocks = getArticleBlocks(article);
   els.articleDialogContent.innerHTML = `
     <p class="article-dialog__category">${escapeHtml(article.category || 'Genel')}</p>
     <h2 id="articleDialogTitle">${escapeHtml(article.title || 'Başlıksız yazı')}</h2>
     <p class="form-note">${formatDate(article.publishedAt)} • ${(article.tags || []).map(escapeHtml).join(' • ')}</p>
-    ${(Array.isArray(article.body) ? article.body : [article.body]).filter(Boolean).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
+    <div class="rich-content">${renderContentBlocks(blocks)}</div>
   `;
+  bindRichContentInteractions(els.articleDialogContent);
   els.articleDialog.showModal();
 }
 
@@ -344,10 +346,12 @@ function openCourse(course) {
       const lesson = lessons.find((item) => item.id === button.dataset.openLesson);
       if (!lesson) return;
       els.courseDialogContent.querySelector('#lessonReader').innerHTML = renderLessonReader(course, lesson, state.progress.get(course.id) || {});
+      bindRichContentInteractions(els.courseDialogContent.querySelector('#lessonReader'));
       bindLessonReaderActions(course);
     });
   });
 
+  bindRichContentInteractions(els.courseDialogContent);
   bindLessonReaderActions(course);
   els.courseDialog.showModal();
 }
@@ -373,9 +377,7 @@ function renderLessonListItem(course, lesson, progress) {
 }
 
 function renderLessonReader(course, lesson, progress) {
-  const contentBlocks = normalizeTextBlocks(lesson.content);
-  const exampleBlocks = normalizeTextBlocks(lesson.example);
-  const keyPoints = Array.isArray(lesson.keyPoints) ? lesson.keyPoints.filter(Boolean) : [];
+  const blocks = getLessonBlocks(lesson);
   const resources = Array.isArray(lesson.resources) ? lesson.resources.filter(Boolean) : [];
   const completed = Boolean(progress[lesson.id]);
 
@@ -383,27 +385,18 @@ function renderLessonReader(course, lesson, progress) {
     <article class="lesson-reader__card">
       <p class="lesson-reader__eyebrow">${escapeHtml(course.title || 'Kurs')}</p>
       <h3>${escapeHtml(lesson.title || 'Başlıksız ders')}</h3>
-      ${lesson.durationMinutes ? `<p class="form-note">Tahmini süre: ${escapeHtml(lesson.durationMinutes)} dakika</p>` : ''}
+      <div class="course-meta-row">
+        ${lesson.type ? `<span>${escapeHtml(lesson.type)}</span>` : ''}
+        ${lesson.durationMinutes ? `<span>Tahmini süre: ${escapeHtml(lesson.durationMinutes)} dakika</span>` : ''}
+      </div>
 
-      ${contentBlocks.length
-        ? contentBlocks.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')
-        : '<p class="form-note">Bu ders için henüz ayrıntılı içerik eklenmemiş. Firestore’daki ilgili ders nesnesine <code>content</code> alanı ekleyebilirsin.</p>'}
+      <div class="rich-content">
+        ${blocks.length
+          ? renderContentBlocks(blocks)
+          : '<p class="form-note">Bu ders için henüz ayrıntılı içerik eklenmemiş. Yönetim panelinde bu derse <code>contentBlocks</code> veya eski <code>content</code> alanı ekleyebilirsin.</p>'}
+      </div>
 
-      ${keyPoints.length ? `
-        <div class="lesson-callout">
-          <strong>Kısa özet</strong>
-          <ul>${keyPoints.map((point) => `<li>${escapeHtml(point)}</li>`).join('')}</ul>
-        </div>
-      ` : ''}
-
-      ${exampleBlocks.length ? `
-        <div class="lesson-example">
-          <strong>Örnek</strong>
-          ${exampleBlocks.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
-        </div>
-      ` : ''}
-
-      ${resources.length ? `
+      ${resources.length && !blocks.some((block) => block.type === 'resource') ? `
         <div class="lesson-resources">
           <strong>Kaynaklar</strong>
           <ul>${resources.map(renderResourceLink).join('')}</ul>
@@ -438,6 +431,7 @@ function bindLessonReaderActions(course) {
       const lesson = normalizeLessons(course).find((item) => item.id === lessonId);
       if (lesson) {
         els.courseDialogContent.querySelector('#lessonReader').innerHTML = renderLessonReader(course, lesson, state.progress.get(course.id) || {});
+        bindRichContentInteractions(els.courseDialogContent.querySelector('#lessonReader'));
         bindLessonReaderActions(course);
       }
     });
@@ -512,7 +506,8 @@ function clearArticleForm() {
   els.adminArticleForm.dataset.loaded = 'true';
   if (els.adminArticleSelect) els.adminArticleSelect.value = '';
   setFormField(els.adminArticleForm, 'publishedAt', new Date().toISOString().slice(0, 10));
-  setAdminNote('Yeni yazı hazır. Başlık yazınca Firestore’da slug otomatik oluşur.');
+  setFormField(els.adminArticleForm, 'contentBlocksText', '');
+  setAdminNote('Yeni yazı hazır. Başlık yazınca Firestore’da slug otomatik oluşur. Zengin bloklar boşsa düz içerik kullanılır.');
 }
 
 function fillArticleForm(articleId) {
@@ -530,6 +525,7 @@ function fillArticleForm(articleId) {
   setFormField(els.adminArticleForm, 'category', article.category);
   setFormField(els.adminArticleForm, 'summary', article.summary);
   setFormField(els.adminArticleForm, 'body', normalizeTextBlocks(article.body).join('\n\n'));
+  setFormField(els.adminArticleForm, 'contentBlocksText', blocksToEditorText(article.contentBlocks || []));
   setFormField(els.adminArticleForm, 'tags', Array.isArray(article.tags) ? article.tags.join(', ') : '');
   setFormField(els.adminArticleForm, 'publishedAt', article.publishedAt || new Date().toISOString().slice(0, 10));
   setAdminNote(`“${article.title}” düzenleniyor.`);
@@ -539,12 +535,14 @@ async function handleAdminArticleSubmit(event) {
   event.preventDefault();
   const data = new FormData(els.adminArticleForm);
   const body = splitParagraphs(data.get('body'));
+  const contentBlocks = parseContentBlocksText(data.get('contentBlocksText'));
   const payload = {
     id: els.adminArticleForm.dataset.articleId || undefined,
     title: data.get('title'),
     category: data.get('category'),
     summary: data.get('summary'),
     body,
+    contentBlocks,
     tags: String(data.get('tags') || '').split(',').map((tag) => tag.trim()).filter(Boolean),
     readingMinutes: Math.max(2, Math.ceil(body.join(' ').length / 850)),
     publishedAt: data.get('publishedAt') || new Date().toISOString().slice(0, 10)
@@ -727,7 +725,8 @@ function clearLessonForm({ keepCourse = false } = {}) {
   setFormField(els.adminLessonForm, 'type', 'Okuma');
   const nextOrder = normalizeLessons(state.courses.find((course) => course.id === selectedCourse) || {}).length + 1;
   setFormField(els.adminLessonForm, 'order', nextOrder);
-  setAdminNote('Yeni ders hazır. Paragrafları ve maddeleri satır satır yazabilirsin.');
+  setFormField(els.adminLessonForm, 'contentBlocksText', '');
+  setAdminNote('Yeni ders hazır. İstersen düz alanları, istersen zengin içerik bloklarını kullanabilirsin.');
 }
 
 function fillLessonForm(courseId, lessonId) {
@@ -750,6 +749,7 @@ function fillLessonForm(courseId, lessonId) {
   setFormField(els.adminLessonForm, 'keyPoints', Array.isArray(lesson.keyPoints) ? lesson.keyPoints.join('\n') : '');
   setFormField(els.adminLessonForm, 'example', normalizeTextBlocks(lesson.example).join('\n\n'));
   setFormField(els.adminLessonForm, 'resources', resourcesToText(lesson.resources));
+  setFormField(els.adminLessonForm, 'contentBlocksText', blocksToEditorText(lesson.contentBlocks || []));
   setAdminNote(`“${lesson.title}” dersi düzenleniyor.`);
 }
 
@@ -771,7 +771,8 @@ async function handleAdminLessonSubmit(event) {
     content: splitParagraphs(data.get('content')),
     keyPoints: splitLines(data.get('keyPoints')),
     example: splitParagraphs(data.get('example')),
-    resources: parseResources(data.get('resources'))
+    resources: parseResources(data.get('resources')),
+    contentBlocks: parseContentBlocksText(data.get('contentBlocksText'))
   };
 
   try {
@@ -891,7 +892,230 @@ function resourcesToText(resources) {
 }
 
 function hasReadableLessonContent(lesson) {
-  return normalizeTextBlocks(lesson.content).length || normalizeTextBlocks(lesson.example).length;
+  return getLessonBlocks(lesson).length;
+}
+
+
+
+function getArticleBlocks(article) {
+  if (Array.isArray(article?.contentBlocks) && article.contentBlocks.length) return article.contentBlocks;
+  return normalizeTextBlocks(article?.body).map((text) => ({ type: 'paragraph', text }));
+}
+
+function getLessonBlocks(lesson) {
+  if (Array.isArray(lesson?.contentBlocks) && lesson.contentBlocks.length) return lesson.contentBlocks;
+
+  const blocks = normalizeTextBlocks(lesson?.content).map((text) => ({ type: 'paragraph', text }));
+  const keyPoints = Array.isArray(lesson?.keyPoints) ? lesson.keyPoints.filter(Boolean) : [];
+  const exampleBlocks = normalizeTextBlocks(lesson?.example);
+  const resources = Array.isArray(lesson?.resources) ? lesson.resources.filter(Boolean) : [];
+
+  if (keyPoints.length) blocks.push({ type: 'callout', tone: 'success', title: 'Kısa özet', text: keyPoints.join('\n') });
+  exampleBlocks.forEach((text) => blocks.push({ type: 'callout', tone: 'info', title: 'Örnek', text }));
+  resources.forEach((resource) => {
+    if (typeof resource === 'string') blocks.push({ type: 'resource', title: resource, url: /^https?:\/\//i.test(resource) ? resource : '' });
+    else blocks.push({ type: 'resource', title: resource.title || resource.label || 'Kaynak', url: resource.url || '' });
+  });
+  return blocks;
+}
+
+function renderContentBlocks(blocks = []) {
+  return blocks.map((block) => renderContentBlock(block)).join('');
+}
+
+function renderContentBlock(block) {
+  const type = String(block?.type || 'paragraph').toLowerCase();
+
+  if (type === 'heading') return `<h3 class="content-heading">${escapeHtml(block.text || block.title || '')}</h3>`;
+  if (type === 'paragraph') return `<p>${escapeHtml(block.text || '')}</p>`;
+  if (type === 'quote') return `<blockquote class="content-quote"><p>${escapeHtml(block.text || '')}</p>${block.source ? `<cite>${escapeHtml(block.source)}</cite>` : ''}</blockquote>`;
+
+  if (type === 'callout') {
+    const tone = ['info', 'warning', 'success', 'data', 'source', 'exam'].includes(block.tone) ? block.tone : 'info';
+    const text = normalizeTextBlocks(block.text).length ? normalizeTextBlocks(block.text) : [block.text || ''];
+    return `<aside class="content-callout content-callout--${tone}">${block.title ? `<strong>${escapeHtml(block.title)}</strong>` : ''}${text.filter(Boolean).map((item) => `<p>${escapeHtml(item)}</p>`).join('')}</aside>`;
+  }
+
+  if (type === 'list') {
+    const items = Array.isArray(block.items) ? block.items : normalizeTextBlocks(block.text);
+    return `<ul class="content-list">${items.filter(Boolean).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`;
+  }
+
+  if (type === 'image') {
+    if (!isSafeUrl(block.url)) return '';
+    return `<figure class="content-image"><img src="${escapeHtml(block.url)}" alt="${escapeHtml(block.alt || block.title || '')}" loading="lazy" />${block.caption ? `<figcaption>${escapeHtml(block.caption)}</figcaption>` : ''}</figure>`;
+  }
+
+  if (type === 'youtube' || type === 'video') {
+    const embedUrl = getYouTubeEmbedUrl(block.url || block.videoId);
+    if (!embedUrl) return `<p class="form-note">Geçersiz YouTube bağlantısı.</p>`;
+    return `<figure class="content-embed content-embed--video">${block.title ? `<figcaption>${escapeHtml(block.title)}</figcaption>` : ''}<iframe src="${escapeHtml(embedUrl)}" title="${escapeHtml(block.title || 'YouTube video')}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy"></iframe></figure>`;
+  }
+
+  if (type === 'pdf') {
+    if (!isSafeUrl(block.url)) return '';
+    return `<figure class="content-embed content-embed--pdf"><figcaption>${escapeHtml(block.title || 'PDF belge')}</figcaption><iframe src="${escapeHtml(block.url)}" title="${escapeHtml(block.title || 'PDF belge')}" loading="lazy"></iframe><p><a href="${escapeHtml(block.url)}" target="_blank" rel="noopener noreferrer">PDF’i yeni sekmede aç</a></p></figure>`;
+  }
+
+  if (type === 'resource') {
+    const title = block.title || block.label || block.url || 'Kaynak';
+    return `<p class="content-resource">Kaynak: ${block.url && isSafeUrl(block.url) ? `<a href="${escapeHtml(block.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(title)}</a>` : escapeHtml(title)}</p>`;
+  }
+
+  if (type === 'quiz') {
+    const options = Array.isArray(block.options) ? block.options : [];
+    const correctIndex = Number(block.correctIndex);
+    return `<section class="content-quiz" data-quiz><strong>${escapeHtml(block.question || 'Mini soru')}</strong><div class="content-quiz__options">${options.map((option, index) => `<button type="button" data-quiz-option="${index}" data-correct="${index === correctIndex}">${escapeHtml(option)}</button>`).join('')}</div>${block.explanation ? `<p class="content-quiz__explanation" hidden>${escapeHtml(block.explanation)}</p>` : ''}</section>`;
+  }
+
+  return `<p>${escapeHtml(block.text || JSON.stringify(block))}</p>`;
+}
+
+function bindRichContentInteractions(root = document) {
+  root.querySelectorAll('[data-quiz]').forEach((quiz) => {
+    quiz.querySelectorAll('[data-quiz-option]').forEach((button) => {
+      button.addEventListener('click', () => {
+        quiz.querySelectorAll('[data-quiz-option]').forEach((item) => { item.disabled = true; });
+        button.dataset.selected = 'true';
+        button.dataset.result = button.dataset.correct === 'true' ? 'correct' : 'wrong';
+        const explanation = quiz.querySelector('.content-quiz__explanation');
+        if (explanation) explanation.hidden = false;
+      });
+    });
+  });
+}
+
+function parseContentBlocksText(value) {
+  const text = String(value || '').trim();
+  if (!text) return [];
+  if (text.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(text);
+      return Array.isArray(parsed) ? parsed.map(cleanContentBlock).filter(Boolean) : [];
+    } catch (error) {
+      throw new Error(`Zengin içerik JSON okunamadı: ${error.message}`);
+    }
+  }
+  return text.split(/\n\s*\n/g).map((chunk) => parseContentChunk(chunk.trim())).filter(Boolean);
+}
+
+function parseContentChunk(chunk) {
+  if (!chunk) return null;
+  const lines = chunk.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const first = lines[0] || '';
+  if (/^##\s+/.test(first)) return { type: 'heading', text: first.replace(/^##\s+/, '').trim() };
+  if (/^>\s+/.test(first)) return { type: 'quote', text: lines.map((line) => line.replace(/^>\s?/, '')).join('\n') };
+
+  const callout = first.match(/^\[!(info|warning|success|data|source|exam)\]\s*(.*)$/i);
+  if (callout) return { type: 'callout', tone: callout[1].toLowerCase(), title: callout[2] || toneTitle(callout[1]), text: lines.slice(1).join('\n') };
+
+  const lower = first.toLowerCase();
+  if (lower.startsWith('youtube:') || lower.startsWith('video:')) {
+    const value = first.replace(/^(youtube|video):/i, '');
+    const [url, title] = splitPipe(value);
+    return { type: 'youtube', url, title };
+  }
+  if (lower.startsWith('pdf:')) {
+    const value = first.replace(/^pdf:/i, '');
+    const [title, url] = splitPipe(value);
+    return { type: 'pdf', title: title || 'PDF', url };
+  }
+  if (lower.startsWith('image:') || lower.startsWith('resim:')) {
+    const value = first.replace(/^(image|resim):/i, '');
+    const [url, alt, caption] = splitPipe(value);
+    return { type: 'image', url, alt, caption };
+  }
+  if (lower.startsWith('resource:') || lower.startsWith('kaynak:')) {
+    const value = first.replace(/^(resource|kaynak):/i, '');
+    const [title, url] = splitPipe(value);
+    return { type: 'resource', title, url };
+  }
+  if (lower.startsWith('quiz:') || lower.startsWith('soru:')) return parseQuizChunk(lines);
+  if (lines.every((line) => /^[-*]\s+/.test(line))) return { type: 'list', items: lines.map((line) => line.replace(/^[-*]\s+/, '')) };
+  return { type: 'paragraph', text: lines.join('\n') };
+}
+
+function parseQuizChunk(lines) {
+  const question = lines[0].replace(/^(quiz|soru):\s*/i, '').trim();
+  const options = [];
+  let correctIndex = -1;
+  let explanation = '';
+  lines.slice(1).forEach((line) => {
+    const option = line.match(/^([A-Ea-e])\)\s*(.*)$/);
+    if (option) { options.push(option[2].trim()); return; }
+    const correct = line.match(/^(correct|dogru|doğru):\s*([A-Ea-e0-9]+)/i);
+    if (correct) {
+      const value = correct[2].trim().toUpperCase();
+      correctIndex = /^[A-E]$/.test(value) ? value.charCodeAt(0) - 65 : Number(value);
+      return;
+    }
+    const exp = line.match(/^(explanation|açıklama|aciklama):\s*(.*)$/i);
+    if (exp) explanation = exp[2].trim();
+  });
+  return { type: 'quiz', question, options, correctIndex, explanation };
+}
+
+function blocksToEditorText(blocks) {
+  if (!Array.isArray(blocks) || !blocks.length) return '';
+  return blocks.map((block) => {
+    const type = String(block?.type || 'paragraph').toLowerCase();
+    if (type === 'heading') return `## ${block.text || block.title || ''}`;
+    if (type === 'paragraph') return block.text || '';
+    if (type === 'quote') return `> ${block.text || ''}`;
+    if (type === 'callout') return `[!${block.tone || 'info'}] ${block.title || ''}\n${block.text || ''}`;
+    if (type === 'list') return (block.items || []).map((item) => `- ${item}`).join('\n');
+    if (type === 'youtube' || type === 'video') return `youtube: ${[block.url, block.title].filter(Boolean).join(' | ')}`;
+    if (type === 'pdf') return `pdf: ${[block.title, block.url].filter(Boolean).join(' | ')}`;
+    if (type === 'image') return `image: ${[block.url, block.alt, block.caption].filter(Boolean).join(' | ')}`;
+    if (type === 'resource') return `resource: ${[block.title, block.url].filter(Boolean).join(' | ')}`;
+    if (type === 'quiz') {
+      const letters = ['A', 'B', 'C', 'D', 'E'];
+      const opts = (block.options || []).map((option, index) => `${letters[index]}) ${option}`).join('\n');
+      const correct = Number.isFinite(Number(block.correctIndex)) ? `Doğru: ${letters[Number(block.correctIndex)] || block.correctIndex}` : '';
+      const explanation = block.explanation ? `Açıklama: ${block.explanation}` : '';
+      return [`Soru: ${block.question || ''}`, opts, correct, explanation].filter(Boolean).join('\n');
+    }
+    return JSON.stringify(block, null, 2);
+  }).join('\n\n');
+}
+
+function cleanContentBlock(block) {
+  if (!block || typeof block !== 'object') return null;
+  const type = String(block.type || 'paragraph').toLowerCase();
+  return { ...block, type };
+}
+
+function splitPipe(value = '') {
+  return String(value).split('|').map((part) => part.trim());
+}
+
+function toneTitle(tone) {
+  return ({ info: 'Bilgi', warning: 'Dikkat', success: 'Akılda kalsın', data: 'Veriyle bak', source: 'Kaynak kontrolü', exam: 'Sınav notu' })[String(tone).toLowerCase()] || 'Not';
+}
+
+function getYouTubeEmbedUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^[a-zA-Z0-9_-]{11}$/.test(raw)) return `https://www.youtube.com/embed/${raw}`;
+  try {
+    const url = new URL(raw);
+    let id = '';
+    if (url.hostname.includes('youtu.be')) id = url.pathname.replace('/', '').split('/')[0];
+    else if (url.hostname.includes('youtube.com')) id = url.searchParams.get('v') || url.pathname.split('/').filter(Boolean).pop();
+    if (/^[a-zA-Z0-9_-]{11}$/.test(id)) return `https://www.youtube.com/embed/${id}`;
+  } catch (_) {
+    return '';
+  }
+  return '';
+}
+
+function isSafeUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return ['http:', 'https:'].includes(url.protocol);
+  } catch (_) {
+    return false;
+  }
 }
 
 function renderResourceLink(resource) {
