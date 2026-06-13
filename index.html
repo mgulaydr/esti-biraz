@@ -195,7 +195,25 @@
             <label>Etiketler <input name="tags" placeholder="bilim, veri, eğitim" /></label>
           </div>
           <label>Özet <textarea name="summary" required rows="3"></textarea></label>
-          <label>İçerik <textarea name="body" required rows="9" placeholder="Her paragrafı yeni satıra yazabilirsin."></textarea></label>
+          <label>İçerik <textarea name="body" required rows="7" placeholder="Her paragrafı yeni satıra yazabilirsin. Zengin blok kullanırsan bu alan kısa özet/düz metin yedeği olarak kalır."></textarea></label>
+          <label>Zengin içerik blokları <textarea name="contentBlocksText" rows="12" placeholder="Örnekler:
+## Ara başlık
+
+[!info] Bir yudum bilgi
+Not metni
+
+youtube: https://www.youtube.com/watch?v=VIDEO_ID | Video başlığı
+
+pdf: Ders notu | https://site.com/dosya.pdf
+
+image: https://site.com/resim.jpg | Alt metin | Görsel açıklaması
+
+Soru: Halk sağlığının amacı nedir?
+A) Bireysel tedavi
+B) Toplum sağlığını korumak
+Doğru: B
+Açıklama: Halk sağlığı toplum düzeyinde çalışır."></textarea></label>
+          <p class="form-note">Boş satırlarla blokları ayır. Desteklenen bloklar: ara başlık, paragraf, callout, görsel, YouTube, PDF, kaynak, liste, alıntı, mini soru.</p>
           <div class="button-row">
             <button class="primary-button" type="submit">Yazıyı kaydet</button>
             <button class="ghost-button danger-button" type="button" id="adminDeleteArticleButton">Yazıyı sil</button>
@@ -270,6 +288,27 @@
           <label>Kısa özet maddeleri <textarea name="keyPoints" rows="5" placeholder="Her satır bir madde olur."></textarea></label>
           <label>Örnek <textarea name="example" rows="4" placeholder="Dersi somutlaştıran kısa örnek."></textarea></label>
           <label>Kaynaklar <textarea name="resources" rows="4" placeholder="Başlık | https://...&#10;veya sadece https://..."></textarea></label>
+          <label>Zengin ders blokları <textarea name="contentBlocksText" rows="13" placeholder="Örnekler:
+## Öğrenme hedefi
+
+[!success] Akılda kalsın
+Bu kutu yeşil görünür.
+
+youtube: https://www.youtube.com/watch?v=VIDEO_ID | Video ders
+
+pdf: Ders notu | https://site.com/ders.pdf
+
+image: https://site.com/gorsel.jpg | Alt metin | Açıklama
+
+- Madde bir
+- Madde iki
+
+Soru: Doğru seçenek hangisi?
+A) Seçenek 1
+B) Seçenek 2
+Doğru: B
+Açıklama: Kısa açıklama."></textarea></label>
+          <p class="form-note">Zengin bloklar doluysa ders okuyucuda bu alan öncelikli gösterilir; eski içerik/özet/örnek alanları yedek olarak kalır.</p>
           <div class="button-row">
             <button class="primary-button" type="submit">Dersi kaydet</button>
             <button class="ghost-button danger-button" type="button" id="adminDeleteLessonButton">Dersi sil</button>
