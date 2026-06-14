@@ -7,6 +7,7 @@ let firebaseModules = null;
 let app = null;
 let auth = null;
 let db = null;
+let storage = null;
 let currentUser = null;
 let authSubscribers = [];
 
@@ -21,12 +22,13 @@ export function firebaseIsConfigured() {
 
 async function loadFirebaseModules() {
   if (!firebaseModules) {
-    const [appMod, authMod, firestoreMod] = await Promise.all([
+    const [appMod, authMod, firestoreMod, storageMod] = await Promise.all([
       import(`${CDN}/firebase-app.js`),
       import(`${CDN}/firebase-auth.js`),
-      import(`${CDN}/firebase-firestore.js`)
+      import(`${CDN}/firebase-firestore.js`),
+      import(`${CDN}/firebase-storage.js`)
     ]);
-    firebaseModules = { appMod, authMod, firestoreMod };
+    firebaseModules = { appMod, authMod, firestoreMod, storageMod };
   }
   return firebaseModules;
 }
@@ -41,6 +43,7 @@ export async function initFirebase() {
   app = appMod.getApps().length ? appMod.getApp() : appMod.initializeApp(firebaseConfig);
   auth = authMod.getAuth(app);
   db = firestoreMod.getFirestore(app);
+  storage = storageMod.getStorage(app);
 
   authMod.onAuthStateChanged(auth, (user) => {
     currentUser = user;
@@ -243,6 +246,54 @@ export async function setLessonProgress(courseId, lessonId, completed) {
   return { mode: 'firestore' };
 }
 
+
+export async function uploadContentFile(file, context = {}) {
+  assertAdminReady('Dosya yüklemek için admin hesabıyla giriş yapılmalıdır.');
+  if (!storage) throw new Error('Firebase Storage hazır değil. Firebase Console’da Storage hizmetini etkinleştir.');
+  if (!(file instanceof File)) throw new Error('Yüklenecek geçerli bir dosya seçilmedi.');
+
+  const maxSize = 25 * 1024 * 1024;
+  if (file.size > maxSize) throw new Error('Dosya en fazla 25 MB olabilir.');
+
+  const allowedTypes = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+    'application/pdf'
+  ];
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error('Şimdilik yalnızca JPG, PNG, WEBP, GIF ve PDF yüklenebilir.');
+  }
+
+  const { storageMod } = await loadFirebaseModules();
+  const extension = getFileExtension(file.name, file.type);
+  const originalName = file.name.replace(/\.[^.]+$/, '');
+  const folder = sanitizePathSegment(context.folder || context.contextType || 'content');
+  const owner = sanitizePathSegment(context.ownerId || 'general');
+  const fileName = `${Date.now()}-${slugify(originalName) || 'dosya'}${extension ? `.${extension}` : ''}`;
+  const path = `uploads/${folder}/${owner}/${fileName}`;
+  const fileRef = storageMod.ref(storage, path);
+
+  await storageMod.uploadBytes(fileRef, file, {
+    contentType: file.type,
+    customMetadata: {
+      originalName: file.name,
+      uploadedBy: currentUser?.email || '',
+      ownerId: String(context.ownerId || '')
+    }
+  });
+
+  const url = await storageMod.getDownloadURL(fileRef);
+  return {
+    url,
+    path,
+    name: file.name,
+    type: file.type,
+    size: file.size
+  };
+}
+
 export async function saveNewsletterEmail(email) {
   if (!firebaseIsConfigured() || !db) {
     const key = `${LOCAL_PREFIX}newsletter`;
@@ -318,21 +369,69 @@ function normalizeContentBlocks(value) {
   if (!Array.isArray(value)) return [];
   return value
     .filter((block) => block && typeof block === 'object')
-    .map((block) => {
-      const type = String(block.type || 'paragraph').trim().toLowerCase();
-      const normalized = { type };
+    .map(normalizeContentBlockForFirestore)
+    .filter((block) => block && block.type);
+}
 
-      ['text', 'title', 'tone', 'url', 'alt', 'caption', 'source', 'question', 'explanation', 'videoId'].forEach((key) => {
-        if (block[key] !== undefined && block[key] !== null) normalized[key] = String(block[key]).trim();
-      });
+function normalizeContentBlockForFirestore(block) {
+  const type = String(block.type || 'paragraph').trim().toLowerCase();
+  const out = { type };
 
-      if (Array.isArray(block.items)) normalized.items = block.items.map(String).map((item) => item.trim()).filter(Boolean);
-      if (Array.isArray(block.options)) normalized.options = block.options.map(String).map((item) => item.trim()).filter(Boolean);
-      if (Number.isFinite(Number(block.correctIndex))) normalized.correctIndex = Number(block.correctIndex);
+  const stringFields = [
+    'text', 'title', 'tone', 'url', 'alt', 'caption', 'source', 'question',
+    'explanation', 'videoId', 'statement', 'language', 'code', 'value',
+    'term', 'definition', 'note', 'label'
+  ];
+  stringFields.forEach((key) => {
+    if (block[key] !== undefined && block[key] !== null) out[key] = String(block[key]).trim();
+  });
 
-      return normalized;
-    })
-    .filter((block) => block.type);
+  if (Array.isArray(block.items)) {
+    out.items = block.items.map((item) => {
+      if (item && typeof item === 'object') {
+        const normalized = {};
+        ['term', 'definition', 'left', 'right', 'text', 'title'].forEach((key) => {
+          if (item[key] !== undefined && item[key] !== null) normalized[key] = String(item[key]).trim();
+        });
+        return normalized;
+      }
+      return String(item).trim();
+    }).filter((item) => typeof item === 'string' ? item : Object.values(item).some(Boolean));
+  }
+
+  if (Array.isArray(block.options)) out.options = block.options.map(String).map((item) => item.trim()).filter(Boolean);
+  if (Array.isArray(block.headers)) out.headers = block.headers.map(String).map((item) => item.trim()).filter(Boolean);
+  if (Array.isArray(block.rows)) {
+    out.rows = block.rows
+      .filter((row) => Array.isArray(row))
+      .map((row) => row.map(String).map((cell) => cell.trim()));
+  }
+  if (Array.isArray(block.pairs)) {
+    out.pairs = block.pairs.map((pair) => ({
+      left: String(pair?.left || '').trim(),
+      right: String(pair?.right || '').trim()
+    })).filter((pair) => pair.left || pair.right);
+  }
+
+  if (Number.isFinite(Number(block.correctIndex))) out.correctIndex = Number(block.correctIndex);
+  if (block.correct !== undefined) out.correct = block.correct === true || String(block.correct).toLowerCase() === 'true';
+
+  return out;
+}
+
+function getFileExtension(name, mimeType) {
+  const fromName = String(name || '').split('.').pop()?.toLowerCase();
+  if (fromName && fromName !== String(name || '').toLowerCase()) return fromName.replace(/[^a-z0-9]/g, '').slice(0, 8);
+  if (mimeType === 'image/jpeg') return 'jpg';
+  if (mimeType === 'image/png') return 'png';
+  if (mimeType === 'image/webp') return 'webp';
+  if (mimeType === 'image/gif') return 'gif';
+  if (mimeType === 'application/pdf') return 'pdf';
+  return '';
+}
+
+function sanitizePathSegment(value) {
+  return slugify(value || 'icerik') || 'icerik';
 }
 
 export function slugify(value) {

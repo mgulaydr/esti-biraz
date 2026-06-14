@@ -1565,3 +1565,26 @@ progress::-moz-progress-bar { background: var(--brand-green); border-radius: 999
     grid-template-columns: 1fr;
   }
 }
+
+/* Aşama 8: Firebase Storage dosya yükleme */
+.block-upload {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px dashed color-mix(in srgb, var(--brand-teal) 35%, var(--line));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--brand-teal) 5%, var(--card));
+}
+
+.block-upload input[type='file'] {
+  width: 100%;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.block-upload [data-block-upload-status] {
+  margin: 0;
+}
