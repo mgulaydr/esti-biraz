@@ -174,6 +174,8 @@ function bindEvents() {
   els.adminDeleteLessonButton?.addEventListener('click', handleAdminLessonDelete);
   els.adminLessonForm?.addEventListener('submit', handleAdminLessonSubmit);
 
+  setupBlockEditors();
+
   els.newsletterForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const email = document.querySelector('#newsletterEmail').value.trim();
@@ -464,6 +466,374 @@ function renderMetrics() {
   `).join('');
 }
 
+
+function setupBlockEditors() {
+  document.querySelectorAll('textarea[name="contentBlocksText"]').forEach((textarea) => {
+    if (textarea.dataset.blockEditorReady === 'true') return;
+    textarea.dataset.blockEditorReady = 'true';
+    textarea.classList.add('block-editor-source');
+
+    const editor = document.createElement('div');
+    editor.className = 'block-editor';
+    editor.innerHTML = `
+      <div class="block-editor__head">
+        <div>
+          <strong>${escapeHtml(getBlockEditorTitle(textarea))}</strong>
+          <p class="form-note">Form doldurarak blok ekle. Kaydettiğinde alttaki veri <code>contentBlocks</code> olarak Firestore’a gider.</p>
+        </div>
+        <div class="block-editor__tools">
+          <label>
+            Blok türü
+            <select data-block-add-type>
+              ${getBlockTypeOptions('paragraph')}
+            </select>
+          </label>
+          <button class="ghost-button" type="button" data-block-add>Blok ekle</button>
+          <button class="ghost-button" type="button" data-block-import>Metinden içe aktar</button>
+        </div>
+      </div>
+      <p class="form-note block-editor__status" data-block-editor-status></p>
+      <div class="block-editor__list" data-block-list></div>
+      <details class="block-editor__preview-wrap">
+        <summary>Önizleme</summary>
+        <div class="rich-content block-editor__preview" data-block-preview></div>
+      </details>
+    `;
+    textarea.insertAdjacentElement('afterend', editor);
+    editor._textarea = textarea;
+    editor._blocks = [];
+
+    editor.addEventListener('click', handleBlockEditorClick);
+    editor.addEventListener('input', handleBlockEditorInput);
+    editor.addEventListener('change', handleBlockEditorInput);
+    textarea.addEventListener('input', () => {
+      if (textarea.dataset.blockEditorUpdating === 'true') return;
+      syncBlockEditor(textarea);
+    });
+
+    syncBlockEditor(textarea);
+  });
+}
+
+function getBlockEditorTitle(textarea) {
+  if (textarea.closest('#adminArticleForm')) return 'Yazı blok editörü';
+  if (textarea.closest('#adminLessonForm')) return 'Ders blok editörü';
+  return 'Zengin içerik blok editörü';
+}
+
+function syncBlockEditorForForm(form) {
+  const textarea = form?.elements?.contentBlocksText;
+  if (textarea) syncBlockEditor(textarea);
+}
+
+function syncBlockEditor(textarea) {
+  const editor = getBlockEditor(textarea);
+  if (!editor) return;
+  const result = safeParseEditorBlocks(textarea.value);
+  editor._blocks = result.blocks;
+  editor._parseError = result.error;
+  renderBlockEditor(editor);
+}
+
+function getBlockEditor(textarea) {
+  let node = textarea?.nextElementSibling;
+  while (node) {
+    if (node.classList?.contains('block-editor')) return node;
+    node = node.nextElementSibling;
+  }
+  return null;
+}
+
+function safeParseEditorBlocks(value) {
+  try {
+    return { blocks: parseContentBlocksText(value), error: '' };
+  } catch (error) {
+    return { blocks: [], error: error.message };
+  }
+}
+
+function renderBlockEditor(editor) {
+  const blocks = Array.isArray(editor._blocks) ? editor._blocks : [];
+  const list = editor.querySelector('[data-block-list]');
+  const status = editor.querySelector('[data-block-editor-status]');
+  if (status) {
+    status.textContent = editor._parseError
+      ? `Blok metni okunamadı: ${editor._parseError}`
+      : blocks.length ? `${blocks.length} blok hazır.` : 'Henüz blok yok. Bir blok türü seçip “Blok ekle” düğmesine bas.';
+  }
+  if (list) {
+    list.innerHTML = blocks.length
+      ? blocks.map((block, index) => renderBlockEditorCard(block, index, blocks.length)).join('')
+      : '<div class="block-editor__empty">Henüz zengin blok eklenmedi. Düz metin alanları yedek olarak kullanılmaya devam eder.</div>';
+  }
+  renderBlockEditorPreview(editor);
+}
+
+function renderBlockEditorPreview(editor) {
+  const preview = editor.querySelector('[data-block-preview]');
+  if (!preview) return;
+  const blocks = Array.isArray(editor._blocks) ? editor._blocks : [];
+  preview.innerHTML = blocks.length
+    ? renderContentBlocks(blocks)
+    : '<p class="form-note">Önizleme için en az bir blok ekle.</p>';
+  bindRichContentInteractions(preview);
+}
+
+function renderBlockEditorCard(block, index, total) {
+  const type = String(block?.type || 'paragraph').toLowerCase();
+  return `
+    <article class="block-card" data-block-index="${index}">
+      <header class="block-card__head">
+        <label>
+          Tür
+          <select data-block-field="type">
+            ${getBlockTypeOptions(type)}
+          </select>
+        </label>
+        <div class="block-card__actions">
+          <button class="ghost-button ghost-button--small" type="button" data-block-move="up" ${index === 0 ? 'disabled' : ''}>Yukarı</button>
+          <button class="ghost-button ghost-button--small" type="button" data-block-move="down" ${index === total - 1 ? 'disabled' : ''}>Aşağı</button>
+          <button class="ghost-button ghost-button--small danger-button" type="button" data-block-delete>Sil</button>
+        </div>
+      </header>
+      <div class="block-card__body">
+        ${renderBlockEditorFields(block, type)}
+      </div>
+    </article>
+  `;
+}
+
+function renderBlockEditorFields(block, type) {
+  if (type === 'heading') {
+    return blockInput('Başlık metni', 'text', block.text || block.title || '');
+  }
+  if (type === 'paragraph') {
+    return blockTextarea('Paragraf', 'text', block.text || '', 4);
+  }
+  if (type === 'quote') {
+    return `${blockTextarea('Alıntı', 'text', block.text || '', 4)}${blockInput('Kaynak / kişi', 'source', block.source || '')}`;
+  }
+  if (type === 'callout') {
+    return `
+      <div class="block-card__grid">
+        <label>Ton
+          <select data-block-field="tone">
+            ${getToneOptions(block.tone || 'info')}
+          </select>
+        </label>
+        ${blockInput('Başlık', 'title', block.title || toneTitle(block.tone || 'info'))}
+      </div>
+      ${blockTextarea('Not metni', 'text', block.text || '', 4)}
+    `;
+  }
+  if (type === 'list') {
+    const items = Array.isArray(block.items) ? block.items.join('\n') : (block.text || '');
+    return blockTextarea('Liste maddeleri; her satır bir madde', 'items', items, 5);
+  }
+  if (type === 'image') {
+    return `
+      ${blockInput('Görsel URL', 'url', block.url || '', 'https://...')}
+      <div class="block-card__grid">
+        ${blockInput('Alt metin', 'alt', block.alt || '')}
+        ${blockInput('Açıklama', 'caption', block.caption || '')}
+      </div>
+    `;
+  }
+  if (type === 'youtube' || type === 'video') {
+    return `
+      ${blockInput('YouTube linki veya video ID', 'url', block.url || block.videoId || '', 'https://www.youtube.com/watch?v=...')}
+      ${blockInput('Video başlığı', 'title', block.title || '')}
+    `;
+  }
+  if (type === 'pdf') {
+    return `
+      ${blockInput('PDF başlığı', 'title', block.title || 'PDF belge')}
+      ${blockInput('PDF URL', 'url', block.url || '', 'https://...pdf')}
+    `;
+  }
+  if (type === 'resource') {
+    return `
+      ${blockInput('Kaynak başlığı', 'title', block.title || block.label || '')}
+      ${blockInput('Kaynak URL', 'url', block.url || '', 'https://...')}
+    `;
+  }
+  if (type === 'quiz') {
+    const options = Array.isArray(block.options) ? block.options.join('\n') : '';
+    return `
+      ${blockTextarea('Soru', 'question', block.question || '', 3)}
+      <div class="block-card__grid">
+        ${blockTextarea('Seçenekler; her satır bir seçenek', 'options', options, 5)}
+        ${blockInput('Doğru seçenek sıra no. 0=A, 1=B, 2=C', 'correctIndex', Number.isFinite(Number(block.correctIndex)) ? String(block.correctIndex) : '0', '0')}
+      </div>
+      ${blockTextarea('Açıklama', 'explanation', block.explanation || '', 3)}
+    `;
+  }
+  return blockTextarea('Metin', 'text', block.text || '', 4);
+}
+
+function blockInput(label, field, value, placeholder = '') {
+  return `<label>${escapeHtml(label)} <input data-block-field="${escapeHtml(field)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" /></label>`;
+}
+
+function blockTextarea(label, field, value, rows = 4) {
+  return `<label>${escapeHtml(label)} <textarea data-block-field="${escapeHtml(field)}" rows="${rows}">${escapeHtml(value)}</textarea></label>`;
+}
+
+function getBlockTypeOptions(current) {
+  const options = [
+    ['paragraph', 'Paragraf'],
+    ['heading', 'Ara başlık'],
+    ['callout', 'Renkli not / callout'],
+    ['quote', 'Alıntı'],
+    ['list', 'Liste'],
+    ['image', 'Görsel'],
+    ['youtube', 'YouTube video'],
+    ['pdf', 'PDF gömme'],
+    ['resource', 'Kaynak bağlantısı'],
+    ['quiz', 'Mini test']
+  ];
+  return options.map(([value, label]) => `<option value="${value}" ${value === current ? 'selected' : ''}>${label}</option>`).join('');
+}
+
+function getToneOptions(current) {
+  const options = [
+    ['info', 'Bilgi / mavi'],
+    ['warning', 'Dikkat / kırmızı'],
+    ['success', 'Akılda kalsın / yeşil'],
+    ['data', 'Veriyle bak / teal'],
+    ['source', 'Kaynak kontrolü'],
+    ['exam', 'Sınav notu']
+  ];
+  return options.map(([value, label]) => `<option value="${value}" ${value === current ? 'selected' : ''}>${label}</option>`).join('');
+}
+
+function handleBlockEditorClick(event) {
+  const editor = event.currentTarget;
+  const textarea = editor._textarea;
+  if (!textarea) return;
+
+  if (event.target.closest('[data-block-add]')) {
+    const type = editor.querySelector('[data-block-add-type]')?.value || 'paragraph';
+    editor._blocks.push(createDefaultBlock(type));
+    commitBlockEditor(editor);
+    renderBlockEditor(editor);
+    return;
+  }
+
+  if (event.target.closest('[data-block-import]')) {
+    syncBlockEditor(textarea);
+    return;
+  }
+
+  const card = event.target.closest('[data-block-index]');
+  if (!card) return;
+  const index = Number(card.dataset.blockIndex);
+
+  if (event.target.closest('[data-block-delete]')) {
+    editor._blocks.splice(index, 1);
+    commitBlockEditor(editor);
+    renderBlockEditor(editor);
+    return;
+  }
+
+  const move = event.target.closest('[data-block-move]')?.dataset.blockMove;
+  if (move === 'up' && index > 0) {
+    [editor._blocks[index - 1], editor._blocks[index]] = [editor._blocks[index], editor._blocks[index - 1]];
+    commitBlockEditor(editor);
+    renderBlockEditor(editor);
+    return;
+  }
+  if (move === 'down' && index < editor._blocks.length - 1) {
+    [editor._blocks[index + 1], editor._blocks[index]] = [editor._blocks[index], editor._blocks[index + 1]];
+    commitBlockEditor(editor);
+    renderBlockEditor(editor);
+  }
+}
+
+function handleBlockEditorInput(event) {
+  const editor = event.currentTarget;
+  const card = event.target.closest('[data-block-index]');
+  if (!card) return;
+  const index = Number(card.dataset.blockIndex);
+  if (!Number.isFinite(index)) return;
+
+  if (event.target.matches('[data-block-field="type"]')) {
+    const oldBlock = editor._blocks[index] || {};
+    editor._blocks[index] = convertBlockToType(oldBlock, event.target.value);
+    commitBlockEditor(editor);
+    renderBlockEditor(editor);
+    return;
+  }
+
+  editor._blocks[index] = readBlockEditorCard(card);
+  commitBlockEditor(editor, { silent: true });
+  renderBlockEditorPreview(editor);
+}
+
+function createDefaultBlock(type) {
+  const cleanType = String(type || 'paragraph').toLowerCase();
+  if (cleanType === 'heading') return { type: 'heading', text: 'Yeni ara başlık' };
+  if (cleanType === 'callout') return { type: 'callout', tone: 'info', title: 'Bir yudum bilgi', text: 'Not metni...' };
+  if (cleanType === 'quote') return { type: 'quote', text: 'Alıntı metni...', source: '' };
+  if (cleanType === 'list') return { type: 'list', items: ['Madde bir', 'Madde iki'] };
+  if (cleanType === 'image') return { type: 'image', url: '', alt: '', caption: '' };
+  if (cleanType === 'youtube') return { type: 'youtube', url: '', title: 'Video ders' };
+  if (cleanType === 'pdf') return { type: 'pdf', title: 'PDF belge', url: '' };
+  if (cleanType === 'resource') return { type: 'resource', title: 'Kaynak', url: '' };
+  if (cleanType === 'quiz') return { type: 'quiz', question: 'Soru metni?', options: ['Seçenek A', 'Seçenek B'], correctIndex: 0, explanation: 'Kısa açıklama.' };
+  return { type: 'paragraph', text: 'Yeni paragraf...' };
+}
+
+function convertBlockToType(block, nextType) {
+  const text = block.text || block.title || block.question || '';
+  const next = createDefaultBlock(nextType);
+  if (next.type === 'heading') next.text = text || next.text;
+  if (next.type === 'paragraph') next.text = text || next.text;
+  if (next.type === 'callout') next.text = text || next.text;
+  if (next.type === 'quote') next.text = text || next.text;
+  if (next.type === 'resource' && block.url) next.url = block.url;
+  if ((next.type === 'image' || next.type === 'youtube' || next.type === 'pdf') && block.url) next.url = block.url;
+  return next;
+}
+
+function readBlockEditorCard(card) {
+  const type = getCardField(card, 'type') || 'paragraph';
+  if (type === 'heading') return { type, text: getCardField(card, 'text') };
+  if (type === 'paragraph') return { type, text: getCardField(card, 'text') };
+  if (type === 'quote') return { type, text: getCardField(card, 'text'), source: getCardField(card, 'source') };
+  if (type === 'callout') return { type, tone: getCardField(card, 'tone') || 'info', title: getCardField(card, 'title'), text: getCardField(card, 'text') };
+  if (type === 'list') return { type, items: splitLines(getCardField(card, 'items')) };
+  if (type === 'image') return { type, url: getCardField(card, 'url'), alt: getCardField(card, 'alt'), caption: getCardField(card, 'caption') };
+  if (type === 'youtube') return { type, url: getCardField(card, 'url'), title: getCardField(card, 'title') };
+  if (type === 'pdf') return { type, title: getCardField(card, 'title'), url: getCardField(card, 'url') };
+  if (type === 'resource') return { type, title: getCardField(card, 'title'), url: getCardField(card, 'url') };
+  if (type === 'quiz') return {
+    type,
+    question: getCardField(card, 'question'),
+    options: splitLines(getCardField(card, 'options')),
+    correctIndex: Number(getCardField(card, 'correctIndex') || 0),
+    explanation: getCardField(card, 'explanation')
+  };
+  return { type: 'paragraph', text: getCardField(card, 'text') };
+}
+
+function getCardField(card, field) {
+  return card.querySelector(`[data-block-field="${cssEscape(field)}"]`)?.value?.trim() || '';
+}
+
+function commitBlockEditor(editor, { silent = false } = {}) {
+  const textarea = editor._textarea;
+  if (!textarea) return;
+  const cleaned = editor._blocks.map(cleanContentBlock).filter(Boolean);
+  textarea.dataset.blockEditorUpdating = 'true';
+  textarea.value = cleaned.length ? JSON.stringify(cleaned, null, 2) : '';
+  textarea.dataset.blockEditorUpdating = 'false';
+  if (!silent) {
+    const status = editor.querySelector('[data-block-editor-status]');
+    if (status) status.textContent = cleaned.length ? `${cleaned.length} blok hazır.` : 'Blok yok.';
+  }
+}
+
 function renderAdminPanel() {
   if (!els.adminDialog) return;
   renderAdminTabs();
@@ -507,6 +877,7 @@ function clearArticleForm() {
   if (els.adminArticleSelect) els.adminArticleSelect.value = '';
   setFormField(els.adminArticleForm, 'publishedAt', new Date().toISOString().slice(0, 10));
   setFormField(els.adminArticleForm, 'contentBlocksText', '');
+  syncBlockEditorForForm(els.adminArticleForm);
   setAdminNote('Yeni yazı hazır. Başlık yazınca Firestore’da slug otomatik oluşur. Zengin bloklar boşsa düz içerik kullanılır.');
 }
 
@@ -526,6 +897,7 @@ function fillArticleForm(articleId) {
   setFormField(els.adminArticleForm, 'summary', article.summary);
   setFormField(els.adminArticleForm, 'body', normalizeTextBlocks(article.body).join('\n\n'));
   setFormField(els.adminArticleForm, 'contentBlocksText', blocksToEditorText(article.contentBlocks || []));
+  syncBlockEditorForForm(els.adminArticleForm);
   setFormField(els.adminArticleForm, 'tags', Array.isArray(article.tags) ? article.tags.join(', ') : '');
   setFormField(els.adminArticleForm, 'publishedAt', article.publishedAt || new Date().toISOString().slice(0, 10));
   setAdminNote(`“${article.title}” düzenleniyor.`);
@@ -726,6 +1098,7 @@ function clearLessonForm({ keepCourse = false } = {}) {
   const nextOrder = normalizeLessons(state.courses.find((course) => course.id === selectedCourse) || {}).length + 1;
   setFormField(els.adminLessonForm, 'order', nextOrder);
   setFormField(els.adminLessonForm, 'contentBlocksText', '');
+  syncBlockEditorForForm(els.adminLessonForm);
   setAdminNote('Yeni ders hazır. İstersen düz alanları, istersen zengin içerik bloklarını kullanabilirsin.');
 }
 
@@ -750,6 +1123,7 @@ function fillLessonForm(courseId, lessonId) {
   setFormField(els.adminLessonForm, 'example', normalizeTextBlocks(lesson.example).join('\n\n'));
   setFormField(els.adminLessonForm, 'resources', resourcesToText(lesson.resources));
   setFormField(els.adminLessonForm, 'contentBlocksText', blocksToEditorText(lesson.contentBlocks || []));
+  syncBlockEditorForForm(els.adminLessonForm);
   setAdminNote(`“${lesson.title}” dersi düzenleniyor.`);
 }
 
