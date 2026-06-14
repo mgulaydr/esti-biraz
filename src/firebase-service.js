@@ -1,3 +1,4 @@
+/* ESTI BIRAZ RECOVERY STAGE8-FREE V2 - firebase-service.js */
 import { firebaseConfig, adminEmails } from './firebase-config.js';
 
 const CDN = 'https://www.gstatic.com/firebasejs/10.12.5';
@@ -7,7 +8,6 @@ let firebaseModules = null;
 let app = null;
 let auth = null;
 let db = null;
-let storage = null;
 let currentUser = null;
 let authSubscribers = [];
 
@@ -22,13 +22,12 @@ export function firebaseIsConfigured() {
 
 async function loadFirebaseModules() {
   if (!firebaseModules) {
-    const [appMod, authMod, firestoreMod, storageMod] = await Promise.all([
+    const [appMod, authMod, firestoreMod] = await Promise.all([
       import(`${CDN}/firebase-app.js`),
       import(`${CDN}/firebase-auth.js`),
-      import(`${CDN}/firebase-firestore.js`),
-      import(`${CDN}/firebase-storage.js`)
+      import(`${CDN}/firebase-firestore.js`)
     ]);
-    firebaseModules = { appMod, authMod, firestoreMod, storageMod };
+    firebaseModules = { appMod, authMod, firestoreMod };
   }
   return firebaseModules;
 }
@@ -43,7 +42,6 @@ export async function initFirebase() {
   app = appMod.getApps().length ? appMod.getApp() : appMod.initializeApp(firebaseConfig);
   auth = authMod.getAuth(app);
   db = firestoreMod.getFirestore(app);
-  storage = storageMod.getStorage(app);
 
   authMod.onAuthStateChanged(auth, (user) => {
     currentUser = user;
@@ -246,53 +244,6 @@ export async function setLessonProgress(courseId, lessonId, completed) {
   return { mode: 'firestore' };
 }
 
-
-export async function uploadContentFile(file, context = {}) {
-  assertAdminReady('Dosya yüklemek için admin hesabıyla giriş yapılmalıdır.');
-  if (!storage) throw new Error('Firebase Storage hazır değil. Firebase Console’da Storage hizmetini etkinleştir.');
-  if (!(file instanceof File)) throw new Error('Yüklenecek geçerli bir dosya seçilmedi.');
-
-  const maxSize = 25 * 1024 * 1024;
-  if (file.size > maxSize) throw new Error('Dosya en fazla 25 MB olabilir.');
-
-  const allowedTypes = [
-    'image/jpeg',
-    'image/png',
-    'image/webp',
-    'image/gif',
-    'application/pdf'
-  ];
-  if (!allowedTypes.includes(file.type)) {
-    throw new Error('Şimdilik yalnızca JPG, PNG, WEBP, GIF ve PDF yüklenebilir.');
-  }
-
-  const { storageMod } = await loadFirebaseModules();
-  const extension = getFileExtension(file.name, file.type);
-  const originalName = file.name.replace(/\.[^.]+$/, '');
-  const folder = sanitizePathSegment(context.folder || context.contextType || 'content');
-  const owner = sanitizePathSegment(context.ownerId || 'general');
-  const fileName = `${Date.now()}-${slugify(originalName) || 'dosya'}${extension ? `.${extension}` : ''}`;
-  const path = `uploads/${folder}/${owner}/${fileName}`;
-  const fileRef = storageMod.ref(storage, path);
-
-  await storageMod.uploadBytes(fileRef, file, {
-    contentType: file.type,
-    customMetadata: {
-      originalName: file.name,
-      uploadedBy: currentUser?.email || '',
-      ownerId: String(context.ownerId || '')
-    }
-  });
-
-  const url = await storageMod.getDownloadURL(fileRef);
-  return {
-    url,
-    path,
-    name: file.name,
-    type: file.type,
-    size: file.size
-  };
-}
 
 export async function saveNewsletterEmail(email) {
   if (!firebaseIsConfigured() || !db) {

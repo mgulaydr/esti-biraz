@@ -1,3 +1,4 @@
+/* ESTI BIRAZ RECOVERY STAGE8-FREE V2 - app.js */
 import { demoArticles, demoCourses, demoMetrics } from './content.js';
 import {
   deleteArticle,
@@ -16,7 +17,6 @@ import {
   saveCourse,
   saveCourseLesson,
   saveNewsletterEmail,
-  uploadContentFile,
   setLessonProgress,
   slugify,
   subscribeAuth
@@ -633,7 +633,7 @@ function renderBlockEditorFields(block, type) {
   }
   if (type === 'image') {
     return `
-      ${blockUploadControl('Görsel yükle', 'image/*')}
+      <p class="form-note">Görsel için herkese açık bir URL kullan. Dosya yükleme ücretsiz Firebase planında kapalıdır.</p>
       ${blockInput('Görsel URL', 'url', block.url || '', 'https://...')}
       <div class="block-card__grid">
         ${blockInput('Alt metin', 'alt', block.alt || '')}
@@ -649,7 +649,7 @@ function renderBlockEditorFields(block, type) {
   }
   if (type === 'pdf') {
     return `
-      ${blockUploadControl('PDF yükle', 'application/pdf')}
+      <p class="form-note">PDF için herkese açık bir URL kullan. Dosya yükleme ücretsiz Firebase planında kapalıdır.</p>
       ${blockInput('PDF başlığı', 'title', block.title || 'PDF belge')}
       ${blockInput('PDF URL', 'url', block.url || '', 'https://...pdf')}
     `;
@@ -743,16 +743,6 @@ function blockTextarea(label, field, value, rows = 4) {
   return `<label>${escapeHtml(label)} <textarea data-block-field="${escapeHtml(field)}" rows="${rows}">${escapeHtml(value)}</textarea></label>`;
 }
 
-function blockUploadControl(label, accept) {
-  return `
-    <div class="block-upload">
-      <label>${escapeHtml(label)}
-        <input type="file" data-block-upload accept="${escapeHtml(accept)}" />
-      </label>
-      <p class="form-note" data-block-upload-status>URL kullanabilir veya dosyayı Firebase Storage’a yükleyebilirsin.</p>
-    </div>
-  `;
-}
 
 function getBlockTypeOptions(current) {
   const options = [
@@ -841,10 +831,6 @@ function handleBlockEditorInput(event) {
   const index = Number(card.dataset.blockIndex);
   if (!Number.isFinite(index)) return;
 
-  if (event.target.matches('[data-block-upload]')) {
-    handleBlockFileUpload(editor, event.target);
-    return;
-  }
 
   if (event.target.matches('[data-block-field="type"]')) {
     const oldBlock = editor._blocks[index] || {};
@@ -859,56 +845,6 @@ function handleBlockEditorInput(event) {
   renderBlockEditorPreview(editor);
 }
 
-
-async function handleBlockFileUpload(editor, input) {
-  const card = input.closest('[data-block-index]');
-  const status = card?.querySelector('[data-block-upload-status]');
-  const index = Number(card?.dataset.blockIndex);
-  const file = input.files?.[0];
-  if (!card || !Number.isFinite(index) || !file) return;
-
-  try {
-    if (status) status.textContent = 'Dosya yükleniyor...';
-    const context = getBlockUploadContext(editor, card);
-    const result = await uploadContentFile(file, context);
-    const urlField = card.querySelector('[data-block-field="url"]');
-    if (urlField) urlField.value = result.url;
-
-    const type = getCardField(card, 'type');
-    if (type === 'image') {
-      const altField = card.querySelector('[data-block-field="alt"]');
-      if (altField && !altField.value.trim()) altField.value = file.name.replace(/\.[^.]+$/, '');
-    }
-    if (type === 'pdf') {
-      const titleField = card.querySelector('[data-block-field="title"]');
-      if (titleField && (!titleField.value.trim() || titleField.value.trim() === 'PDF belge')) titleField.value = file.name.replace(/\.[^.]+$/, '');
-    }
-
-    editor._blocks[index] = readBlockEditorCard(card);
-    commitBlockEditor(editor, { silent: true });
-    if (status) status.textContent = 'Yüklendi. Kaydet düğmesine basınca içerikte kullanılacak.';
-    renderBlockEditorPreview(editor);
-  } catch (error) {
-    if (status) status.textContent = error.message;
-  } finally {
-    input.value = '';
-  }
-}
-
-function getBlockUploadContext(editor, card) {
-  const form = editor._textarea?.closest('form');
-  const blockType = getCardField(card, 'type') || 'content';
-  if (form?.id === 'adminArticleForm') {
-    const title = form.elements?.title?.value || 'yazi';
-    return { folder: 'articles', ownerId: form.dataset.articleId || slugify(title) || 'taslak-yazi', blockType };
-  }
-  if (form?.id === 'adminLessonForm') {
-    const courseId = els.adminCourseSelectForLesson?.value || 'kurs';
-    const title = form.elements?.title?.value || 'ders';
-    return { folder: 'lessons', ownerId: `${courseId}-${form.dataset.lessonId || slugify(title) || 'taslak-ders'}`, blockType };
-  }
-  return { folder: 'content', ownerId: 'genel', blockType };
-}
 
 function createDefaultBlock(type) {
   const cleanType = String(type || 'paragraph').toLowerCase();
