@@ -657,6 +657,67 @@ function renderBlockEditorFields(block, type) {
       ${blockInput('Kaynak URL', 'url', block.url || '', 'https://...')}
     `;
   }
+  if (type === 'truefalse') {
+    return `
+      ${blockTextarea('Doğru / yanlış ifadesi', 'statement', block.statement || block.text || '', 3)}
+      <label>Doğru cevap
+        <select data-block-field="correct">
+          <option value="true" ${block.correct !== false ? 'selected' : ''}>Doğru</option>
+          <option value="false" ${block.correct === false ? 'selected' : ''}>Yanlış</option>
+        </select>
+      </label>
+      ${blockTextarea('Açıklama', 'explanation', block.explanation || '', 3)}
+    `;
+  }
+  if (type === 'matching') {
+    const pairs = Array.isArray(block.pairs) ? block.pairs.map((pair) => `${pair.left || ''} | ${pair.right || ''}`).join('\n') : '';
+    return blockTextarea('Eşleştirme çiftleri; her satır: Sol kavram | Sağ karşılık', 'pairs', pairs, 6);
+  }
+  if (type === 'code') {
+    return `
+      ${blockInput('Dil / başlık', 'language', block.language || block.title || 'text')}
+      ${blockTextarea('Kod', 'code', block.code || block.text || '', 8)}
+    `;
+  }
+  if (type === 'table') {
+    const headers = Array.isArray(block.headers) ? block.headers.join(' | ') : '';
+    const rows = Array.isArray(block.rows) ? block.rows.map((row) => (Array.isArray(row) ? row : []).join(' | ')).join('\n') : '';
+    return `
+      ${blockInput('Tablo başlığı / açıklaması', 'caption', block.caption || block.title || '')}
+      ${blockInput('Sütun başlıkları; | ile ayır', 'headers', headers, 'Ölçüt | Değer | Yorum')}
+      ${blockTextarea('Satırlar; her satırda hücreleri | ile ayır', 'rows', rows, 6)}
+    `;
+  }
+  if (type === 'infographic') {
+    return `
+      <div class="block-card__grid">
+        ${blockInput('Kart başlığı', 'title', block.title || 'Veriyle bak')}
+        ${blockInput('Vurgu değeri', 'value', block.value || '')}
+      </div>
+      <label>Ton
+        <select data-block-field="tone">
+          ${getToneOptions(block.tone || 'data')}
+        </select>
+      </label>
+      ${blockTextarea('Açıklama', 'text', block.text || '', 4)}
+    `;
+  }
+  if (type === 'concept') {
+    return `
+      ${blockInput('Kavram', 'term', block.term || block.title || '')}
+      ${blockTextarea('Tanım', 'definition', block.definition || block.text || '', 4)}
+      ${blockTextarea('Ek not / örnek', 'note', block.note || '', 3)}
+    `;
+  }
+  if (type === 'glossary') {
+    const items = Array.isArray(block.items) ? block.items.map((item) => `${item.term || ''} | ${item.definition || ''}`).join('\n') : '';
+    return blockTextarea('Terimler; her satır: Terim | Açıklama', 'items', items, 7);
+  }
+  if (type === 'objectives' || type === 'outcomes') {
+    const items = Array.isArray(block.items) ? block.items.join('\n') : '';
+    const label = type === 'objectives' ? 'Ders hedefleri; her satır bir hedef' : 'Ders sonunda kazanımlar; her satır bir kazanım';
+    return `${blockInput('Başlık', 'title', block.title || (type === 'objectives' ? 'Ders hedefleri' : 'Ders sonunda kazanımlar'))}${blockTextarea(label, 'items', items, 6)}`;
+  }
   if (type === 'quiz') {
     const options = Array.isArray(block.options) ? block.options.join('\n') : '';
     return `
@@ -690,7 +751,16 @@ function getBlockTypeOptions(current) {
     ['youtube', 'YouTube video'],
     ['pdf', 'PDF gömme'],
     ['resource', 'Kaynak bağlantısı'],
-    ['quiz', 'Mini test']
+    ['quiz', 'Çoktan seçmeli mini test'],
+    ['truefalse', 'Doğru / yanlış sorusu'],
+    ['matching', 'Eşleştirme sorusu'],
+    ['code', 'Kod bloğu'],
+    ['table', 'Tablo'],
+    ['infographic', 'İnfografik kart'],
+    ['concept', 'Önemli kavram kartı'],
+    ['glossary', 'Terim sözlüğü kutusu'],
+    ['objectives', 'Ders hedefleri'],
+    ['outcomes', 'Ders sonunda kazanımlar']
   ];
   return options.map(([value, label]) => `<option value="${value}" ${value === current ? 'selected' : ''}>${label}</option>`).join('');
 }
@@ -781,6 +851,15 @@ function createDefaultBlock(type) {
   if (cleanType === 'pdf') return { type: 'pdf', title: 'PDF belge', url: '' };
   if (cleanType === 'resource') return { type: 'resource', title: 'Kaynak', url: '' };
   if (cleanType === 'quiz') return { type: 'quiz', question: 'Soru metni?', options: ['Seçenek A', 'Seçenek B'], correctIndex: 0, explanation: 'Kısa açıklama.' };
+  if (cleanType === 'truefalse') return { type: 'truefalse', statement: 'Bu ifade doğru mu?', correct: true, explanation: 'Kısa açıklama.' };
+  if (cleanType === 'matching') return { type: 'matching', pairs: [{ left: 'Kavram', right: 'Karşılık' }, { left: 'Örnek', right: 'Açıklama' }] };
+  if (cleanType === 'code') return { type: 'code', language: 'text', code: 'Kod veya komut buraya...' };
+  if (cleanType === 'table') return { type: 'table', caption: 'Tablo başlığı', headers: ['Ölçüt', 'Değer'], rows: [['Örnek', 'Açıklama']] };
+  if (cleanType === 'infographic') return { type: 'infographic', tone: 'data', title: 'Veriyle bak', value: '%', text: 'Kısa veri yorumu...' };
+  if (cleanType === 'concept') return { type: 'concept', term: 'Önemli kavram', definition: 'Kavramın kısa tanımı...', note: '' };
+  if (cleanType === 'glossary') return { type: 'glossary', items: [{ term: 'Terim', definition: 'Açıklama' }] };
+  if (cleanType === 'objectives') return { type: 'objectives', title: 'Ders hedefleri', items: ['Bu derste temel kavramları ayırt eder.'] };
+  if (cleanType === 'outcomes') return { type: 'outcomes', title: 'Ders sonunda kazanımlar', items: ['Konuyu kısa örneklerle açıklayabilir.'] };
   return { type: 'paragraph', text: 'Yeni paragraf...' };
 }
 
@@ -807,6 +886,14 @@ function readBlockEditorCard(card) {
   if (type === 'youtube') return { type, url: getCardField(card, 'url'), title: getCardField(card, 'title') };
   if (type === 'pdf') return { type, title: getCardField(card, 'title'), url: getCardField(card, 'url') };
   if (type === 'resource') return { type, title: getCardField(card, 'title'), url: getCardField(card, 'url') };
+  if (type === 'truefalse') return { type, statement: getCardField(card, 'statement'), correct: getCardField(card, 'correct') !== 'false', explanation: getCardField(card, 'explanation') };
+  if (type === 'matching') return { type, pairs: parsePairs(getCardField(card, 'pairs')) };
+  if (type === 'code') return { type, language: getCardField(card, 'language') || 'text', code: getCardField(card, 'code') };
+  if (type === 'table') return { type, caption: getCardField(card, 'caption'), headers: splitPipes(getCardField(card, 'headers')), rows: parseTableRows(getCardField(card, 'rows')) };
+  if (type === 'infographic') return { type, tone: getCardField(card, 'tone') || 'data', title: getCardField(card, 'title'), value: getCardField(card, 'value'), text: getCardField(card, 'text') };
+  if (type === 'concept') return { type, term: getCardField(card, 'term'), definition: getCardField(card, 'definition'), note: getCardField(card, 'note') };
+  if (type === 'glossary') return { type, items: parsePairs(getCardField(card, 'items')).map((pair) => ({ term: pair.left, definition: pair.right })) };
+  if (type === 'objectives' || type === 'outcomes') return { type, title: getCardField(card, 'title'), items: splitLines(getCardField(card, 'items')) };
   if (type === 'quiz') return {
     type,
     question: getCardField(card, 'question'),
@@ -815,6 +902,21 @@ function readBlockEditorCard(card) {
     explanation: getCardField(card, 'explanation')
   };
   return { type: 'paragraph', text: getCardField(card, 'text') };
+}
+
+function parsePairs(value) {
+  return splitLines(value).map((line) => {
+    const [left, right] = splitPipe(line);
+    return { left: left || '', right: right || '' };
+  }).filter((pair) => pair.left || pair.right);
+}
+
+function splitPipes(value) {
+  return String(value || '').split('|').map((part) => part.trim()).filter(Boolean);
+}
+
+function parseTableRows(value) {
+  return splitLines(value).map(splitPipes).filter((row) => row.length);
 }
 
 function getCardField(card, field) {
@@ -1336,6 +1438,46 @@ function renderContentBlock(block) {
     return `<p class="content-resource">Kaynak: ${block.url && isSafeUrl(block.url) ? `<a href="${escapeHtml(block.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(title)}</a>` : escapeHtml(title)}</p>`;
   }
 
+  if (type === 'truefalse') {
+    const correct = block.correct !== false;
+    return `<section class="content-quiz content-quiz--truefalse" data-quiz><strong>${escapeHtml(block.statement || block.text || 'Doğru mu, yanlış mı?')}</strong><div class="content-quiz__options"><button type="button" data-quiz-option="true" data-correct="${correct === true}">Doğru</button><button type="button" data-quiz-option="false" data-correct="${correct === false}">Yanlış</button></div>${block.explanation ? `<p class="content-quiz__explanation" hidden>${escapeHtml(block.explanation)}</p>` : ''}</section>`;
+  }
+
+  if (type === 'matching') {
+    const pairs = Array.isArray(block.pairs) ? block.pairs : [];
+    return `<section class="content-matching"><h4>Eşleştirme</h4><div class="content-matching__grid">${pairs.map((pair) => `<span>${escapeHtml(pair.left || '')}</span><strong>${escapeHtml(pair.right || '')}</strong>`).join('')}</div></section>`;
+  }
+
+  if (type === 'code') {
+    return `<figure class="content-code"><figcaption>${escapeHtml(block.language || block.title || 'Kod')}</figcaption><pre><code>${escapeHtml(block.code || block.text || '')}</code></pre></figure>`;
+  }
+
+  if (type === 'table') {
+    const headers = Array.isArray(block.headers) ? block.headers : [];
+    const rows = Array.isArray(block.rows) ? block.rows : [];
+    return `<figure class="content-table">${block.caption ? `<figcaption>${escapeHtml(block.caption)}</figcaption>` : ''}<div class="content-table__scroll"><table>${headers.length ? `<thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead>` : ''}<tbody>${rows.map((row) => `<tr>${(Array.isArray(row) ? row : []).map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></figure>`;
+  }
+
+  if (type === 'infographic') {
+    const tone = ['info', 'warning', 'success', 'data', 'source', 'exam'].includes(block.tone) ? block.tone : 'data';
+    return `<aside class="content-infographic content-infographic--${tone}">${block.value ? `<strong>${escapeHtml(block.value)}</strong>` : ''}<span>${escapeHtml(block.title || 'Veriyle bak')}</span>${block.text ? `<p>${escapeHtml(block.text)}</p>` : ''}</aside>`;
+  }
+
+  if (type === 'concept') {
+    return `<aside class="content-concept"><span>Önemli kavram</span><strong>${escapeHtml(block.term || block.title || '')}</strong><p>${escapeHtml(block.definition || block.text || '')}</p>${block.note ? `<small>${escapeHtml(block.note)}</small>` : ''}</aside>`;
+  }
+
+  if (type === 'glossary') {
+    const items = Array.isArray(block.items) ? block.items : [];
+    return `<section class="content-glossary"><h4>Terim sözlüğü</h4><dl>${items.map((item) => `<dt>${escapeHtml(item.term || item.left || '')}</dt><dd>${escapeHtml(item.definition || item.right || '')}</dd>`).join('')}</dl></section>`;
+  }
+
+  if (type === 'objectives' || type === 'outcomes') {
+    const items = Array.isArray(block.items) ? block.items : [];
+    const title = block.title || (type === 'objectives' ? 'Ders hedefleri' : 'Ders sonunda kazanımlar');
+    return `<section class="content-objectives content-objectives--${type}"><h4>${escapeHtml(title)}</h4><ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section>`;
+  }
+
   if (type === 'quiz') {
     const options = Array.isArray(block.options) ? block.options : [];
     const correctIndex = Number(block.correctIndex);
@@ -1442,6 +1584,14 @@ function blocksToEditorText(blocks) {
     if (type === 'pdf') return `pdf: ${[block.title, block.url].filter(Boolean).join(' | ')}`;
     if (type === 'image') return `image: ${[block.url, block.alt, block.caption].filter(Boolean).join(' | ')}`;
     if (type === 'resource') return `resource: ${[block.title, block.url].filter(Boolean).join(' | ')}`;
+    if (type === 'truefalse') return [`Doğru/Yanlış: ${block.statement || block.text || ''}`, `Cevap: ${block.correct === false ? 'Yanlış' : 'Doğru'}`, block.explanation ? `Açıklama: ${block.explanation}` : ''].filter(Boolean).join('\n');
+    if (type === 'matching') return ['Eşleştirme:', ...(block.pairs || []).map((pair) => `${pair.left || ''} | ${pair.right || ''}`)].join('\n');
+    if (type === 'code') return `Kod: ${block.language || 'text'}\n${block.code || block.text || ''}`;
+    if (type === 'table') return [`Tablo: ${block.caption || ''}`, (block.headers || []).join(' | '), ...(block.rows || []).map((row) => (Array.isArray(row) ? row : []).join(' | '))].filter(Boolean).join('\n');
+    if (type === 'infographic') return `İnfografik: ${[block.title, block.value].filter(Boolean).join(' | ')}\n${block.text || ''}`;
+    if (type === 'concept') return `Kavram: ${block.term || block.title || ''}\n${block.definition || block.text || ''}${block.note ? `\nNot: ${block.note}` : ''}`;
+    if (type === 'glossary') return ['Terim sözlüğü:', ...(block.items || []).map((item) => `${item.term || ''} | ${item.definition || ''}`)].join('\n');
+    if (type === 'objectives' || type === 'outcomes') return [`${type === 'objectives' ? 'Ders hedefleri' : 'Ders sonunda kazanımlar'}:`, ...(block.items || []).map((item) => `- ${item}`)].join('\n');
     if (type === 'quiz') {
       const letters = ['A', 'B', 'C', 'D', 'E'];
       const opts = (block.options || []).map((option, index) => `${letters[index]}) ${option}`).join('\n');
@@ -1455,7 +1605,19 @@ function blocksToEditorText(blocks) {
 
 function cleanContentBlock(block) {
   if (!block || typeof block !== 'object') return null;
-  const type = String(block.type || 'paragraph').toLowerCase();
+  let type = String(block.type || 'paragraph').toLowerCase();
+  const aliases = {
+    true_false: 'truefalse',
+    trueFalse: 'truefalse',
+    dogruyanlis: 'truefalse',
+    doğruyanlış: 'truefalse',
+    match: 'matching',
+    infographicCard: 'infographic',
+    conceptCard: 'concept',
+    learningObjectives: 'objectives',
+    learningOutcomes: 'outcomes'
+  };
+  type = aliases[type] || type;
   return { ...block, type };
 }
 
