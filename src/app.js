@@ -17,6 +17,7 @@ import {
   saveCourse,
   saveCourseLesson,
   saveNewsletterEmail,
+  saveQuizAttempt,
   setLessonProgress,
   slugify,
   subscribeAuth
@@ -29,7 +30,8 @@ const state = {
   query: '',
   progress: new Map(),
   firebaseEnabled: false,
-  activeAdminTab: 'articles'
+  activeAdminTab: 'articles',
+  lastRouteHash: ''
 };
 
 const els = {
@@ -90,12 +92,14 @@ async function boot() {
   renderCourses();
   renderMetrics();
   updateAuthUi(getCurrentUser());
+  handleHashRoute();
 
   subscribeAuth(async (user) => {
     updateAuthUi(user);
     await refreshAllCourseProgress();
     renderCourses();
     renderAdminPanel();
+    handleHashRoute();
   });
 }
 
@@ -176,6 +180,7 @@ function bindEvents() {
   els.adminLessonForm?.addEventListener('submit', handleAdminLessonSubmit);
 
   setupBlockEditors();
+  window.addEventListener('hashchange', handleHashRoute);
 
   els.newsletterForm.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -259,9 +264,65 @@ function renderArticles() {
     fragment.querySelector('h3').textContent = article.title || 'Başlıksız yazı';
     fragment.querySelector('p').textContent = article.summary || 'Bu yazı için özet eklenmedi.';
     fragment.querySelector('.article-card__meta').textContent = `${formatDate(article.publishedAt)} • ${article.readingMinutes || 3} dk okuma`;
-    button.addEventListener('click', () => openArticle(article));
+    button.addEventListener('click', () => navigateToArticle(article));
     els.articleList.append(fragment);
   });
+}
+
+function navigateToArticle(article) {
+  const id = article?.id || article?.slug || slugify(article?.title || '');
+  const nextHash = `#yazi/${encodeURIComponent(id)}`;
+  if (window.location.hash === nextHash) openArticle(article);
+  else window.location.hash = nextHash;
+}
+
+function navigateToCourse(course) {
+  const id = course?.id || course?.slug || slugify(course?.title || '');
+  const nextHash = courseHash(id);
+  if (window.location.hash === nextHash) openCourse(course);
+  else window.location.hash = nextHash;
+}
+
+function courseHash(courseId) {
+  return `#kurs/${encodeURIComponent(courseId)}`;
+}
+
+function lessonHash(courseId, lessonId) {
+  return `#ders/${encodeURIComponent(courseId)}/${encodeURIComponent(lessonId)}`;
+}
+
+function handleHashRoute() {
+  const hash = window.location.hash || '';
+  if (!hash || hash === state.lastRouteHash) return;
+  state.lastRouteHash = hash;
+
+  const parts = hash.replace(/^#/, '').split('/').map((part) => decodeURIComponent(part));
+  const [type, firstId, secondId] = parts;
+
+  if (type === 'yazi' && firstId) {
+    const article = state.articles.find((item) => [item.id, item.slug, slugify(item.title)].includes(firstId));
+    if (article) openArticle(article);
+  }
+
+  if (type === 'kurs' && firstId) {
+    const course = state.courses.find((item) => [item.id, item.slug, slugify(item.title)].includes(firstId));
+    if (course) openCourse(course);
+  }
+
+  if (type === 'ders' && firstId && secondId) {
+    const course = state.courses.find((item) => [item.id, item.slug, slugify(item.title)].includes(firstId));
+    if (!course) return;
+    openCourse(course);
+    const lesson = normalizeLessons(course).find((item) => item.id === secondId || slugify(item.title) === secondId);
+    if (!lesson) return;
+    requestAnimationFrame(() => {
+      const reader = els.courseDialogContent.querySelector('#lessonReader');
+      if (!reader) return;
+      reader.innerHTML = renderLessonReader(course, lesson, state.progress.get(course.id) || {});
+      bindRichContentInteractions(reader);
+      bindLessonReaderActions(course);
+    });
+  }
 }
 
 function openArticle(article) {
@@ -270,7 +331,7 @@ function openArticle(article) {
     <p class="article-dialog__category">${escapeHtml(article.category || 'Genel')}</p>
     <h2 id="articleDialogTitle">${escapeHtml(article.title || 'Başlıksız yazı')}</h2>
     <p class="form-note">${formatDate(article.publishedAt)} • ${(article.tags || []).map(escapeHtml).join(' • ')}</p>
-    <div class="rich-content">${renderContentBlocks(blocks)}</div>
+    <div class="rich-content">${renderContentBlocks(blocks, { scope: 'article', articleId: article.id || article.slug || article.title })}</div>
   `;
   bindRichContentInteractions(els.articleDialogContent);
   els.articleDialog.showModal();
@@ -281,6 +342,23 @@ async function refreshAllCourseProgress() {
   await Promise.all(state.courses.map(async (course) => {
     state.progress.set(course.id, await getCourseProgress(course.id));
   }));
+}
+
+function renderCourseProgressSummary(course) {
+  const lessons = normalizeLessons(course);
+  const progress = state.progress.get(course.id) || {};
+  const total = lessons.length;
+  const done = lessons.filter((lesson) => progress[lesson.id]).length;
+  const percent = total ? Math.round((done / total) * 100) : 0;
+  return `
+    <div class="course-progress-summary" data-course-progress-summary>
+      <div class="course-progress-summary__row">
+        <strong>Kurs ilerlemesi</strong>
+        <span>${done}/${total} ders • %${percent}</span>
+      </div>
+      <progress value="${percent}" max="100">${percent}%</progress>
+    </div>
+  `;
 }
 
 function renderCourses() {
@@ -299,7 +377,7 @@ function renderCourses() {
     fragment.querySelector('progress').value = progress;
     fragment.querySelector('button').textContent = progress ? `Devam et • %${progress}` : 'Derse başla';
     fragment.querySelector('button').disabled = !lessons.length;
-    fragment.querySelector('button').addEventListener('click', () => openCourse(course));
+    fragment.querySelector('button').addEventListener('click', () => navigateToCourse(course));
     els.courseList.append(fragment);
   });
 
@@ -323,6 +401,7 @@ function openCourse(course) {
         ${course.level ? `<span>Düzey: ${escapeHtml(course.level)}</span>` : ''}
         ${lessons.length ? `<span>${lessons.length} ders</span>` : ''}
       </div>
+      ${renderCourseProgressSummary(course)}
       <p class="form-note">${getCurrentUser() ? 'İlerlemeniz Firestore hesabınıza kaydedilir.' : 'Giriş yapmadığınız için ilerleme bu tarayıcıda geçici saklanır.'}</p>
 
       <div class="course-learning-layout">
@@ -348,6 +427,8 @@ function openCourse(course) {
     button.addEventListener('click', () => {
       const lesson = lessons.find((item) => item.id === button.dataset.openLesson);
       if (!lesson) return;
+      const nextHash = lessonHash(course.id, lesson.id);
+      if (window.location.hash !== nextHash) window.location.hash = nextHash;
       els.courseDialogContent.querySelector('#lessonReader').innerHTML = renderLessonReader(course, lesson, state.progress.get(course.id) || {});
       bindRichContentInteractions(els.courseDialogContent.querySelector('#lessonReader'));
       bindLessonReaderActions(course);
@@ -395,7 +476,7 @@ function renderLessonReader(course, lesson, progress) {
 
       <div class="rich-content">
         ${blocks.length
-          ? renderContentBlocks(blocks)
+          ? renderContentBlocks(blocks, { scope: 'lesson', courseId: course.id, lessonId: lesson.id })
           : '<p class="form-note">Bu ders için henüz ayrıntılı içerik eklenmemiş. Yönetim panelinde bu derse <code>contentBlocks</code> veya eski <code>content</code> alanı ekleyebilirsin.</p>'}
       </div>
 
@@ -1401,11 +1482,22 @@ function getLessonBlocks(lesson) {
   return blocks;
 }
 
-function renderContentBlocks(blocks = []) {
-  return blocks.map((block) => renderContentBlock(block)).join('');
+function quizDataAttrs(context = {}, index = 0, type = 'quiz') {
+  const attrs = {
+    scope: context.scope || 'content',
+    articleId: context.articleId || '',
+    courseId: context.courseId || '',
+    lessonId: context.lessonId || '',
+    quizId: context.quizId || `${type}-${index}`
+  };
+  return `data-quiz-scope="${escapeHtml(attrs.scope)}" data-article-id="${escapeHtml(attrs.articleId)}" data-course-id="${escapeHtml(attrs.courseId)}" data-lesson-id="${escapeHtml(attrs.lessonId)}" data-quiz-id="${escapeHtml(attrs.quizId)}"`;
 }
 
-function renderContentBlock(block) {
+function renderContentBlocks(blocks = [], context = {}) {
+  return blocks.map((block, index) => renderContentBlock(block, index, context)).join('');
+}
+
+function renderContentBlock(block, index = 0, context = {}) {
   const type = String(block?.type || 'paragraph').toLowerCase();
 
   if (type === 'heading') return `<h3 class="content-heading">${escapeHtml(block.text || block.title || '')}</h3>`;
@@ -1446,7 +1538,7 @@ function renderContentBlock(block) {
 
   if (type === 'truefalse') {
     const correct = block.correct !== false;
-    return `<section class="content-quiz content-quiz--truefalse" data-quiz><strong>${escapeHtml(block.statement || block.text || 'Doğru mu, yanlış mı?')}</strong><div class="content-quiz__options"><button type="button" data-quiz-option="true" data-correct="${correct === true}">Doğru</button><button type="button" data-quiz-option="false" data-correct="${correct === false}">Yanlış</button></div>${block.explanation ? `<p class="content-quiz__explanation" hidden>${escapeHtml(block.explanation)}</p>` : ''}</section>`;
+    return `<section class="content-quiz content-quiz--truefalse" data-quiz ${quizDataAttrs(context, index, 'truefalse')}><strong>${escapeHtml(block.statement || block.text || 'Doğru mu, yanlış mı?')}</strong><div class="content-quiz__options"><button type="button" data-quiz-option="true" data-correct="${correct === true}">Doğru</button><button type="button" data-quiz-option="false" data-correct="${correct === false}">Yanlış</button></div>${block.explanation ? `<p class="content-quiz__explanation" hidden>${escapeHtml(block.explanation)}</p>` : ''}</section>`;
   }
 
   if (type === 'matching') {
@@ -1487,7 +1579,7 @@ function renderContentBlock(block) {
   if (type === 'quiz') {
     const options = Array.isArray(block.options) ? block.options : [];
     const correctIndex = Number(block.correctIndex);
-    return `<section class="content-quiz" data-quiz><strong>${escapeHtml(block.question || 'Mini soru')}</strong><div class="content-quiz__options">${options.map((option, index) => `<button type="button" data-quiz-option="${index}" data-correct="${index === correctIndex}">${escapeHtml(option)}</button>`).join('')}</div>${block.explanation ? `<p class="content-quiz__explanation" hidden>${escapeHtml(block.explanation)}</p>` : ''}</section>`;
+    return `<section class="content-quiz" data-quiz ${quizDataAttrs(context, index, 'quiz')}><strong>${escapeHtml(block.question || 'Mini soru')}</strong><div class="content-quiz__options">${options.map((option, index) => `<button type="button" data-quiz-option="${index}" data-correct="${index === correctIndex}">${escapeHtml(option)}</button>`).join('')}</div>${block.explanation ? `<p class="content-quiz__explanation" hidden>${escapeHtml(block.explanation)}</p>` : ''}</section>`;
   }
 
   return `<p>${escapeHtml(block.text || JSON.stringify(block))}</p>`;
@@ -1496,12 +1588,36 @@ function renderContentBlock(block) {
 function bindRichContentInteractions(root = document) {
   root.querySelectorAll('[data-quiz]').forEach((quiz) => {
     quiz.querySelectorAll('[data-quiz-option]').forEach((button) => {
-      button.addEventListener('click', () => {
+      button.addEventListener('click', async () => {
         quiz.querySelectorAll('[data-quiz-option]').forEach((item) => { item.disabled = true; });
         button.dataset.selected = 'true';
-        button.dataset.result = button.dataset.correct === 'true' ? 'correct' : 'wrong';
+        const correct = button.dataset.correct === 'true';
+        button.dataset.result = correct ? 'correct' : 'wrong';
         const explanation = quiz.querySelector('.content-quiz__explanation');
         if (explanation) explanation.hidden = false;
+
+        const status = document.createElement('p');
+        status.className = 'content-quiz__save-note';
+        status.textContent = getCurrentUser()
+          ? 'Yanıtınız kaydediliyor…'
+          : 'Giriş yapmadığınız için yanıt bu tarayıcıda geçici saklanır.';
+        quiz.append(status);
+
+        try {
+          await saveQuizAttempt({
+            scope: quiz.dataset.quizScope || 'content',
+            articleId: quiz.dataset.articleId || '',
+            courseId: quiz.dataset.courseId || '',
+            lessonId: quiz.dataset.lessonId || '',
+            quizId: quiz.dataset.quizId || 'quiz',
+            question: quiz.querySelector('strong')?.textContent || '',
+            selected: button.dataset.quizOption,
+            correct
+          });
+          status.textContent = getCurrentUser() ? 'Yanıtınız kaydedildi.' : 'Yanıtınız bu tarayıcıda geçici saklandı.';
+        } catch (error) {
+          status.textContent = 'Yanıt gösterildi; kayıt yapılamadı. Firestore Rules içinde quizAttempts izni gerekebilir.';
+        }
       });
     });
   });
@@ -1652,8 +1768,11 @@ function getYouTubeEmbedUrl(value) {
 }
 
 function isSafeUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  if (/^(public\/assets\/|assets\/|\.\/|\/)/i.test(raw)) return !raw.includes('..');
   try {
-    const url = new URL(String(value || ''));
+    const url = new URL(raw);
     return ['http:', 'https:'].includes(url.protocol);
   } catch (_) {
     return false;

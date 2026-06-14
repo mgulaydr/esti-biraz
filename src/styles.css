@@ -1566,3 +1566,79 @@ progress::-moz-progress-bar { background: var(--brand-green); border-radius: 999
     grid-template-columns: 1fr;
   }
 }
+
+/* ESTİ BİRAZ v1.1 — final kapsam düzeltmeleri */
+.article-card,
+.course-card,
+.briefing-card,
+.metric-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.article-card::before,
+.course-card::before,
+.briefing-card::before,
+.metric-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 5px;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(90deg, var(--guardian-yellow), var(--brand-green), var(--brand-blue), var(--brand-red));
+}
+
+.article-card__button { padding-top: 24px; }
+.course-card { padding-top: 28px; }
+
+.course-card__topline {
+  position: relative;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 14px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--guardian-yellow);
+  color: #08111f;
+  border: 1px solid color-mix(in srgb, var(--brand-amber) 35%, transparent);
+  box-shadow: 0 6px 16px rgba(5, 41, 98, .08);
+  font-size: .78rem;
+  font-weight: 900;
+  letter-spacing: .055em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.course-progress-summary {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--brand-green) 7%, var(--card));
+}
+
+.course-progress-summary__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--brand-teal);
+}
+
+.content-quiz__save-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: .88rem;
+}
+
+html[data-theme='dark'] .course-card__topline,
+html[data-theme='dark'] .article-card__category,
+html[data-theme='dark'] .pill {
+  color: #08111f;
+}

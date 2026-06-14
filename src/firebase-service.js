@@ -244,6 +244,41 @@ export async function setLessonProgress(courseId, lessonId, completed) {
   return { mode: 'firestore' };
 }
 
+export async function saveQuizAttempt(attempt) {
+  const user = getCurrentUser();
+  const safeAttempt = {
+    scope: String(attempt?.scope || 'content').trim(),
+    articleId: String(attempt?.articleId || '').trim(),
+    courseId: String(attempt?.courseId || '').trim(),
+    lessonId: String(attempt?.lessonId || '').trim(),
+    quizId: String(attempt?.quizId || 'quiz').trim(),
+    question: String(attempt?.question || '').trim().slice(0, 500),
+    selected: String(attempt?.selected || '').trim(),
+    correct: Boolean(attempt?.correct),
+    answeredAt: new Date().toISOString()
+  };
+
+  if (!firebaseIsConfigured() || !db || !user) {
+    const key = `${LOCAL_PREFIX}quizAttempts`;
+    const items = JSON.parse(localStorage.getItem(key) || '[]');
+    items.push(safeAttempt);
+    localStorage.setItem(key, JSON.stringify(items.slice(-200)));
+    return { mode: 'local' };
+  }
+
+  const { firestoreMod } = await loadFirebaseModules();
+  const baseId = [safeAttempt.scope, safeAttempt.articleId, safeAttempt.courseId, safeAttempt.lessonId, safeAttempt.quizId]
+    .filter(Boolean)
+    .join('-') || 'quiz';
+  const attemptId = `${slugify(baseId)}-${Date.now()}`;
+  const docRef = firestoreMod.doc(db, 'users', user.uid, 'quizAttempts', attemptId);
+  await firestoreMod.setDoc(docRef, {
+    ...safeAttempt,
+    answeredAt: firestoreMod.serverTimestamp()
+  }, { merge: true });
+  return { mode: 'firestore' };
+}
+
 
 export async function saveNewsletterEmail(email) {
   if (!firebaseIsConfigured() || !db) {
