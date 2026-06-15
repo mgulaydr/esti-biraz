@@ -306,12 +306,12 @@ a { color: inherit; text-decoration: none; }
 
 .lead-story__meta {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
-  margin-top: 26px;
+  margin-top: 16px;
 }
 
-.lead-story__meta span,
+.lead-story__meta a,
 .pill,
 .eyebrow,
 .article-card__category {
@@ -329,7 +329,7 @@ a { color: inherit; text-decoration: none; }
   padding: 7px 12px;
 }
 
-.lead-story__meta span {
+.lead-story__meta a {
   color: var(--brand-teal);
   background: color-mix(in srgb, var(--brand-green) 18%, transparent);
   border: 1px solid color-mix(in srgb, var(--brand-green) 34%, transparent);
