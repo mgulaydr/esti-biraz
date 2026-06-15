@@ -306,9 +306,9 @@ a { color: inherit; text-decoration: none; }
 
 .lead-story__meta {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
-  margin-top: 16px;
+  margin-top: 26px;
 }
 
 .lead-story__meta a,
