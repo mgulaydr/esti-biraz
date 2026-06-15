@@ -294,8 +294,8 @@ a { color: inherit; text-decoration: none; }
   margin: 24px 0 18px;
   font-family: var(--serif);
   font-size: clamp(2.7rem, 7vw, 5.0rem);
-  letter-spacing: -0.072em;
-  line-height: .88;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
 }
 
 .lead-story p {
